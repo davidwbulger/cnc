@@ -150,7 +150,7 @@ def test_whereBelow():
   ax = fig.add_subplot(111, projection='3d') 
   for (yp,clp) in zip(y,cutlist):
     for cl in clp:
-      ax.plot(cl[0,:],y*np.ones(cl.shape[1]),cl[1,:],'black',linewidth=2)
+      ax.plot(cl[0,:],yp*np.ones(cl.shape[1]),cl[1,:],'black',linewidth=4)
   pga.plot(ax, 'red')
   pgb.plot(ax, 'blue')
   plt.show()

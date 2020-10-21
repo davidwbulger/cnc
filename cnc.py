@@ -199,25 +199,16 @@ class PathGrid:
     # Return structure is not a PathGrid; it's a list (one entry per y value) of lists (one entry per disconnected interval) of xz
     # cutting paths with fixed y.
     dg = (other-self).pospar()  #  "difference grid"
-    segl = [[ np.hstack((
+    segl = [np.hstack((
       np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3, xzp[1,1:]>1e-3),0,False).astype(int))==1),
-      2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1],xzp[1,1:]), False).astype(int))==-1)
-      )) ] for xzp in dg.xz]
+      2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1],xzp[1,1:]), False).astype(int))==-1)  #  changed 1st char from 2
+      )) for xzp in dg.xz]
     return [[np.concatenate((
           np.array([[xzd[0,se[0]]],[np.interp(xzd[0,se[0]],xzs[0,:],xzs[1,:])]]),
-          xzs[:,np.logical_and(xzs[0,:]>xzd[0,se[0]], xzs[0,:]<xzd[0,se[1]])],
-          np.array([[xzd[0,se[1]]],[np.interp(xzd[0,se[1]],xzs[0,:],xzs[1,:])]])),1)
+          xzs[:,np.logical_and(xzs[0,:]>xzd[0,se[0]], xzs[0,:]<xzd[0,se[1]-1])],
+          np.array([[xzd[0,se[1]-1]],[np.interp(xzd[0,se[1]-1],xzs[0,:],xzs[1,:])]])),1)
         for se in seg]
-      for (yp,seg,xzd,xzs) in zip(self.y,segl,dg.xz,self.xz)]  #  ready to debug
-    #raise Exception("You're dead! You're dead! You're dead! And outta this world...")
-
-  #zp = xz[1,:]>1e-3
-  #[xz[:,seg[0]:seg[1]] for seg in np.hstack((
-  #  np.argwhere(np.diff(np.insert(np.logical_or(zp[:-1], zp[1:]), 0, False).astype(int))==1),
-  #  2 + np.argwhere(np.diff(np.append(np.logical_or(zp[:-1], zp[1:]), False).astype(int))==-1)))]
-  #
-  #[np.vstack((xzp[0,seg[0]:seg[1]], yp*np.ones(np.diff(seg)), xzp[1,seg[0]:seg[1]]))
-  #  for 
+      for (yp,seg,xzd,xzs) in zip(self.y,segl,dg.xz,self.xz)]
 
   def maxabs(self):
     return max([max(abs(xzp[1,:])) for xzp in self.xz])
