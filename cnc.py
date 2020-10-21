@@ -59,7 +59,13 @@ class ToolPath:
     self.rahe = rahe
 
   def __str__(self):
-    return(f"ToolPath object with {self.cutx.shape[1]} cuts and {self.nodes.shape[1]} nodes in total.")
+    cutlen = sum([np.linalg.norm(self.nodes[:,j+1]-self.nodes[:,j]) for cx in self.cutx.T for j in range(cx[0],cx[1]-1)])
+    m = np.min(self.nodes,1)
+    M = np.max(self.nodes,1)
+    #return(f"ToolPath object with {self.cutx.shape[1]} cuts and {self.nodes.shape[1]} nodes in total."
+    #  f" Total cut length {cutlen} within box [{m[0]},{M[0]}]x[{m[1]},{M[1]}]x[{m[2]},{M[2]}].")
+    return(f"ToolPath object with {self.cutx.shape[1]} cuts and {self.nodes.shape[1]} nodes in total."
+      " Total cut length %.2f within box [%.2f,%.2f]x[%.2f,%.2f]x[%.2f,%.2f]." % (cutlen,m[0],M[0],m[1],M[1],m[2],M[2]))
 
   def afxform(self, A):
     # Applies the affine transformation described by the 4x4 matrix A to the nodes of self. Returns a copy.
@@ -116,24 +122,24 @@ class ToolPath:
     fidout.write("G00 Z20.\nG91 G28 X0. Y0. Z20.\nG90\nM30\n%\n")
     fidout.close()
 
-  def plot(self, ax, color='black'):
+  def plot(self, ax, color='black', linewidth=1):
     # Plot a ToolPath on the 3D axis "ax", in the given color.
     for cx in self.cutx.T:
-      ax.plot(*nodes[0,cx[0]:cx[1]], color, linewidth=1)
+      ax.plot(*self.nodes[:,cx[0]:cx[1]], color, linewidth=linewidth)
 
-  def compileToolPath(paths, hts):
-    nodes = np.hstack(paths)
-    cumpathlengths = np.cumsum([path.shape[1] for path in paths])
-    cutx = np.vstack((np.insert(cumpathlengths[0:-1],0,0), cumpathlengths))
-    rahe = np.array(hts)
-    return ToolPath(nodes, cutx, rahe)
+def compileToolPath(paths, hts):
+  nodes = np.hstack(paths)
+  cumpathlengths = np.cumsum([path.shape[1] for path in paths])
+  cutx = np.vstack((np.insert(cumpathlengths[0:-1],0,0), cumpathlengths))
+  rahe = np.array(hts)
+  return ToolPath(nodes, cutx, rahe)
 
-  def catToolPaths(TPList, ash):
-    # Joins the ToolPaths in TPList, using Absolute Safe Height ash in between.
-    indexoffsets = np.cumsum([0]+[tp.nodes.shape[1] for tp in TPList[0:-1]])
-    return ToolPath(np.hstack([tp.nodes for tp in TPList]),
-      np.hstack([tp.cutx + io for (tp,io) in zip(TPList, indexoffsets)]),
-      np.concatenate([np.append(tp.rahe,ash) for tp in TPList])[0:-1])
+def catToolPaths(TPList, ash):
+  # Joins the ToolPaths in TPList, using Absolute Safe Height ash in between.
+  indexoffsets = np.cumsum([0]+[tp.nodes.shape[1] for tp in TPList[0:-1]])
+  return ToolPath(np.hstack([tp.nodes for tp in TPList]),
+    np.hstack([tp.cutx + io for (tp,io) in zip(TPList, indexoffsets)]),
+    np.concatenate([np.append(tp.rahe,ash) for tp in TPList])[0:-1])
     
 ######################################################################################################################################
 
@@ -329,9 +335,9 @@ class PathGrid:
       # Reverse cut list in the y direction if necessary:
       if curpos != None and abs(curpos[1]-steptar.y[-1]) < abs(curpos[1]-steptar.y[0]):
         cutlist.reverse()
-        stepy = reversed(y)
+        stepy = reversed(self.y)
       else:
-        stepy  = y
+        stepy  = self.y
 
       for (yp, cutp) in zip(stepy, cutlist):
         if len(cutp):
@@ -484,7 +490,8 @@ Next steps:
   DONE:  rewrite the gcode function ; can be method of ToolPath, after above step
   DONE:  rewrite afxform for new ToolPath structure
   try these out
-    debug whereBelow
+    DONE: debug whereBelow
+    Current bugs: strange vertical cuts (maybe okay?) ; not bothering to cut where bit centre is above stockheight
     #RESTORE in smallDode.py
   tidy up
   trial run of exporting gCode, with stand-in parameters
