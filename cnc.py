@@ -68,7 +68,7 @@ class ToolPath:
   def afxform(self, A):
     # Applies the affine transformation described by the 4x4 matrix A to the nodes of self. Returns a copy.
     # Obviously this will need to be rethought if A[2,0:3] isn't [0,0,1].
-    return ToolPath(np.matmul(A,vstack((self.nodes,[1]*self.nodes.shape[1])))[0:3,:], self.cutx, self.rahe)
+    return ToolPath(np.matmul(A,np.vstack((self.nodes,[1]*self.nodes.shape[1])))[0:3,:], self.cutx, self.rahe)
 
   def PathToGCode(self,feedrate,fname):
     # Create a g-code file corresponding to a ToolPath object.
@@ -419,6 +419,18 @@ def rotAround(x,y,theta):
 def xslate(x,y):
   # Returns an ATM fixing z and translating x and y by (x,y).
   return np.array([[1, 0, 0, x], [0, 1, 0, y], [0, 0, 1, 0], [0, 0, 0, 1]])
+
+def hackaspect(ax):
+  # add a bounding box to force the aspect ratio to be 1:1:1
+  xl = ax.get_xlim()
+  yl = ax.get_ylim()
+  zl = ax.get_zlim()
+  M = 0.5 * max(np.diff(xl),np.diff(yl),np.diff(zl))[0]  #  max radius
+  xl = np.mean(xl) + np.array([-M,M])
+  yl = np.mean(yl) + np.array([-M,M])
+  zl = np.mean(zl) + np.array([-M,M])
+  ax.plot(xl, [yl[0],yl[0]], [zl[0],zl[0]], 'white')
+  ax.plot(xl, [yl[1],yl[1]], [zl[1],zl[1]], 'white')
 
 ######################################################################################################################################
 # THE FUNCTIONS meanroundingup & fitPWL ARE ABOUT EFFICIENTLY TRACING A PATH WITH LINE SEGMENTS:
