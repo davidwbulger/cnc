@@ -9,12 +9,15 @@ rf = 50  #  radius of face at outside
 th = 9  #  thickness of board
 
 ballrad = 1 - 0.05  #  [hack to leave glue gap]  #  radius of drillbit
-offset = 2  #RESTORE  ballrad/4  #  gap between adjacent toolpaths
-numTeeth = 3  #RESTORE  12  #  number of teeth per joined edge (on each piece)
+cutdepth = 2
+offset = 3  #RESTORE  ballrad/4  #  gap between adjacent toolpaths
+numTeeth = 2  #RESTORE 12  #  number of teeth per joined edge (on each piece)
 
 edgePropJoined = 0.85  #  proportion of edge used for finger joint
 mitreMargin = 1  #  vertically, for simplicity
-numJointEdges = 3  #  this many edges will be cut for SMORF joints; the others will be plain mitre cuts. Varies by face.
+numJointEdges = 5  #  this many edges will be cut for SMORF joints; the others will be plain mitre cuts. Varies by face.
+
+boolPlot = True
 
 # Calculated values:
 edgeHalfLen = rf*np.sin(np.pi/5)
@@ -58,12 +61,15 @@ while abserr > ctol:
 cutpath = rounded.castToMold(ballrad, ctol, np.NINF)
 print(str(cutpath))
 
-tooth = cutpath.pacePathGrid(th+ballrad, th+ballrad+10, 3)
+tooth = cutpath.pacePathGrid(th+ballrad, th+ballrad+10, cutdepth)
 print(str(tooth))
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d') 
-rounded.plot(ax, 'blue')
-cutpath.plot(ax, 'green')
-tooth.plot(ax, 'red', linewidth=4)
-plt.show()
+if boolPlot:
+  fig = plt.figure()
+  ax = fig.add_subplot(111, projection='3d') 
+  rounded.plot(ax, 'blue')
+  cutpath.plot(ax, 'green')
+  tooth.plot(ax, 'red', linewidth=1)
+  plt.show()
+
+tooth.PathToGCode(30, "eph.gcode")
