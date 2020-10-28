@@ -13,9 +13,9 @@ import numbers
 ####    DEFINE CLASSES:    ###########################################################################################################
 ######################################################################################################################################
 
-class PolyTri:
+class polyTri:
   def __init__(self,fname):
-    # Read fname (an STL file) to build a PolyTri structure
+    # Read fname (an STL file) to build a polyTri structure
     fid = open(fname, "rb")
     if fid.read(5) == b"solid":
       # Read an ASCII format STL file:
@@ -169,17 +169,9 @@ class PathGrid:
   def __str__(self):
     return(f"PathGrid object with {len(self.y)} paths and {self.nodeCount()} nodes in total.")
 
-  # def resample(self,ltol):
-    # In case excessive resolution has accumulated, resample the paths in xz to within vertical tolerance.
-    # This might be solving a problem that doesn't exist ... let's leave it for now.
-
   def maxoxy(self):
     # returns the scalar maximum of z over x & y
     return max([max(xzp[1,:]) for xzp in self.xz])
-
-  # def maxopg(self, other):
-  #   # max over self & another PathGrid
-  #   return ????  HIPPO
 
   def pospar(self):
     return PathGrid(self.y, [pospar(xzp) for xzp in self.xz])
@@ -191,7 +183,7 @@ class PathGrid:
     dg = (other-self).pospar()  #  "difference grid"
     segl = [np.hstack((
       np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3, xzp[1,1:]>1e-3),0,False).astype(int))==1),
-      2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1],xzp[1,1:]), False).astype(int))==-1)  #  changed 1st char from 2
+      2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1],xzp[1,1:]), False).astype(int))==-1)
       )) for xzp in dg.xz]
     return [[np.concatenate((
           np.array([[xzd[0,se[0]]],[np.interp(xzd[0,se[0]],xzs[0,:],xzs[1,:])]]),
@@ -244,7 +236,6 @@ class PathGrid:
     # The drillbit's head's radius is ballrad. The lateral tolerance for path equality is ltol. Don't cut below floor.
     # If no floor is needed, set floor to np.NINF.
   
-    # mold = {'y':cast['y'].copy(), 'xz':[None for _ in cast['xz']]}  #  or can do it all in a comprehension? haha, no.
     mxz = [None for _ in self.xz]
     for j,(yp,xzp) in enumerate(zip(self.y, self.xz)):
       # j & y describe the cross-section that the drillbit centre traverses.
@@ -275,7 +266,7 @@ class PathGrid:
     return PathGrid(self.y, mxz)
   
   def roundJoint(self,ballrad,ltol):
-    # The idea is to minimally modify the PathGrid "paid" so as to be tangible from above & below with a ball-end drill bit with end
+    # The idea is to minimally modify the PathGrid "self" so as to be tangible from above & below with a ball-end drill bit with end
     # radius "ballrad."
   
     # This works best under the condition that all parts of the original surface are tangible from above OR below.
@@ -303,13 +294,12 @@ class PathGrid:
 
     # Here we want to build the ToolPath in a loop. Unfortunately (though understandably), iteratively appending to numpy arrays
     # would create new copies at each iteration, and be laughably inefficient. But it's hard to predict how much memory to allocate
-    # for the arrays. Therefore, in this loop we'll build two lists: a list of single-cut paths, and a one-item-shorter list of safe
-    # heights for rapid motion between them. Then probably write a separate function to convert that to a ToolPath. (I still think
-    # that having all of a ToolPath's spatial coordinates in a single matrix is sensible, to facilitate spatial transformations.)
+    # for the arrays. Therefore, in this loop we'll build two lists: a list of single-cut paths, and a same-length list of safe
+    # heights for rapid motion between them. Then use compileToolPath to convert that to a ToolPath.
     scpaths = []
     safehts = [abssh]
     steptar = shpaid
-    curpos = None  #  so it knows not to plan a rapid move before first cut
+    curpos = None  #  so it knows not to add a rapid move before first cut
     for cule in cutlevels:
       startOfLevel = True  #  so it knows to avoid at curheight rather than steptar
       curheight = steptar  #  set current stock height to target height at previous step
@@ -323,7 +313,6 @@ class PathGrid:
       else:
         stepy  = self.y
 
-      skipFirst = True
       for (yp, cutp) in zip(stepy, cutlist):
         if len(cutp):
           if curpos != None:
@@ -334,16 +323,10 @@ class PathGrid:
               startOfLevel = False
             else:
               safehts.append(max(maxcrop(curheight,[curpos[0],yp], [cutp[0][0,0],yp]), maxcrop(steptar,curpos, [cutp[0][0,0],yp])))
-          #if skipFirst:
-          #  skipFirst = False
-          #else:
-          #  safehts += [abssh]
           safehts += [maxcrop(curheight,[cutp[j-1][0,-1],yp],[cutp[j][0,0],yp]) for j in range(1,len(cutp))]
           scpaths += [np.vstack((cu[0,:], yp*np.ones(cu.shape[1]), cu[1,:])) for cu in cutp]
           curpos = [scpaths[-1][0,-1], yp]
     return compileToolPath(scpaths, safehts)
-
-# The following two PLF utilities should be hidden inside PathGrid, but I can't get the syntax right:
 
 def addPLFs(a,b):
   # Inputs two lists of 2D numpy arrays of two rows each (x & z), increasing in x, describing each PLF (piece-wise linear function).
@@ -353,7 +336,6 @@ def addPLFs(a,b):
   z = np.interp(x, a[0,:], a[1,:]) + np.interp(x, b[0,:], b[1,:])
   return np.vstack([x,z])
   
-# plf = np.array([[0,1,2,3,4,5,6,7,8,9,10], [-10,10,5,0,0,4,-1,1,2,3,4]])
 def pospar(plf):
   # Inputs a piecewise linear function (described by a 2-row Numpy array, with the first row non-descending).
   # Outputs max(0,plf) in the same format & over the same range.
@@ -383,7 +365,7 @@ def maxcrop(paid, p0, p1):
             retval = max(retval, np.interp(xe, xzp[0,:], xzp[1,:]))
         retval = np.amax(xzp[1,np.logical_and(xzp[0,:]>=x[0], xzp[0,:]<=x[1])], initial=retval)
   else:
-    retval = paid  #  which is hopefully just a numeric value
+    retval = paid  #  which is in this case hopefully just a numeric value
   return retval
 
 ######################################################################################################################################
@@ -416,7 +398,7 @@ def rotAround(x,y,theta):
   s = np.sin(theta)
   return np.array([[c, -s, 0, (1-c)*x+s*y], [s, c, 0, -s*x+(1-c)*y], [0, 0, 1, 0], [0, 0, 0, 1]])
 
-def xslate(x,y):
+def xlate(x,y):
   # Returns an ATM fixing z and translating x and y by (x,y).
   return np.array([[1, 0, 0, x], [0, 1, 0, y], [0, 0, 1, 0], [0, 0, 0, 1]])
 
@@ -471,19 +453,6 @@ def fitPWL(xy, ltol):
     fitto = gotoatmost
   return(xy[:,keepNodes])
 
-######################################################################################################################################
-# THIS SECTION WILL BE ABOUT SMOOTHING SURFACES SO THAT THEY HAVE NO SHARP EDGES (I.E., SO A BALL-END BIT CAN CUT THEM).
-
-# Needs work! I should rationalise this:
-#   I should include cropping somehow. (Via max & min?)
-
-def widen(paid, margin, floor):  #  'paid' is short for 'PAth grID'
-  # just extends each path by margin at each end, at height floor
-  paid['xz'] = \
-    [np.concatenate([np.array([[xz[0,0]-margin,xz[0,0]],[floor,floor]]),xz,np.array([[xz[0,-1],xz[0,-1]+margin],[floor,floor]])], \
-    axis=1) for xz in paid['xz']]
-
-
 """
 27 Sept status & plans
 Refactored for PathGrid class, & smallDode.py is running again.
@@ -511,12 +480,14 @@ Next steps:
   DONE:  write compileToolPath
   DONE:  rewrite the gcode function ; can be method of ToolPath, after above step
   DONE:  rewrite afxform for new ToolPath structure
-  try these out
+  DONE: try these out
     DONE: debug whereBelow
-    Current bugs: strange vertical cuts (maybe okay?)
-    #RESTORE in smallDode.py
-  tidy up
-  trial run of exporting gCode, with stand-in parameters
+    DONE: Current bugs: strange vertical cuts (maybe okay?)
+    DONE: #RESTORE in smallDode.py
+  DONE: trial run of exporting gCode, with stand-in parameters
+  DONE (for now!): tidy up
+  Create two stl cutters: polyTri.cutAtLeast & polyTri.cutAtMost
+  Determine mdf width, plan clamping jigs, make stls, make gcode for them
   set up machine
   buy trimmer & bits
   choose wood

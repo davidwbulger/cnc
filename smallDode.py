@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 #### ##    PARAMETERS:    ## #####
 
-rf = 50  #  planar exradius of face at outside
+rf = 50  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 
 ballrad = 1 - 0.05  #  [hack to leave glue gap]  #  radius of drillbit
@@ -16,9 +16,8 @@ numTeeth = 12  #  number of teeth per joined edge (on each piece)
 
 edgePropJoined = 0.85  #  proportion of edge used for finger joint
 mitreMargin = 1  #  vertically, for simplicity
-numJointEdges = 3  #  this many edges will be cut for SMORF joints; the others will be plain mitre cuts. Varies by face.
 
-boolPlot = True
+boolPlot = False
 
 #### ##    CALCULATED VALUES:    ## #####
 
@@ -92,16 +91,47 @@ phi = 0.4*np.pi
 c = np.cos(phi)
 s = np.sin(phi)
 R = np.array([[c,-s,0,0],[s,c,0,0],[0,0,1,0],[0,0,0,1]])
-alltooth = cnc.catToolPaths(list(teethtooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges)) +
-  list(flattooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges,5)))
 
-if boolPlot:
-  fig = plt.figure()
-  ax = fig.add_subplot(111, projection='3d') 
-  rounded.plot(ax, 'blue')
-  # cutpath.plot(ax, 'green')  #  no longer works since I overwrite cutpath in the flat edge section.
-  alltooth.plot(ax, 'red', linewidth=1)
-  cnc.hackaspect(ax)
-  plt.show()
+for numJointEdges in [2,3,4,5]:
+  alltooth = cnc.catToolPaths(list(teethtooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges)) +
+    list(flattooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges,5)))
+  if boolPlot:
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d') 
+    rounded.plot(ax, 'blue')
+    # cutpath.plot(ax, 'green')  #  no longer works since I overwrite cutpath in the flat edge section.
+    alltooth.plot(ax, 'red', linewidth=1)
+    cnc.hackaspect(ax)
+    plt.show()
+  alltooth.PathToGCode(30, f"SDFace{numJointEdges}.gcode")
 
-alltooth.PathToGCode(30, "eph.gcode")
+# Actually rotate these into position to look at the geometry of the equatorial clamping jig.
+
+######################################################################################################################################
+#####     APPENDIX A:  VERTICES' COORDINATES     #####################################################################################
+######################################################################################################################################
+"""
+This script creates gcode files for cutting the faces of a dodecahedral box. The size parameter we're using, rf, is defined as the
+planar exradius of the exterior faces, i.e., the distance from the centre of a face to a vertex of that face. To obtain coordinates of
+the exterior vertices, multiply the following vectors by rf/2, and note that phi denotes the "golden ratio" (1+sqrt(5))/2:
+
+BOTTOM FACE:
+          phi                 -phi+1              -2                  -phi+1              phi
+          sqrt(3-phi)         sqrt(phi+2)         0                   -sqrt(phi+2)        -sqrt(3-phi)
+          -phi-1              -phi-1              -phi-1              -phi-1              -phi-1
+
+'TROPIC OF CAPRICORN':
+          phi+1               -1                  -2*phi              -1                  phi+1
+          sqrt(phi+2)         sqrt(4*phi+3)       0                   -sqrt(4*phi+3)      -sqrt(phi+2)
+          -phi+1              -phi+1              -phi+1              -phi+1              -phi+1
+
+'TROPIC OF CANCER':
+2*phi               1                   -phi-1              -phi-1              1
+0                   sqrt(4*phi+3)       sqrt(phi+2)         -sqrt(phi+2)        -sqrt(4*phi+3)
+phi-1               phi-1               phi-1               phi-1               phi-1
+
+TOP FACE:
+2                   phi-1               -phi                -phi                phi-1
+0                   sqrt(phi+2)         sqrt(3-phi)         -sqrt(3-phi)        -sqrt(phi+2)
+phi+1               phi+1               phi+1               phi+1               phi+1
+"""
