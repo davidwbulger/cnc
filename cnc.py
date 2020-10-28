@@ -486,7 +486,15 @@ Next steps:
     DONE: #RESTORE in smallDode.py
   DONE: trial run of exporting gCode, with stand-in parameters
   DONE (for now!): tidy up
-  Create two stl cutters: polyTri.cutAtLeast & polyTri.cutAtMost
+  Alter the face-cutting code to have z=0 at the top (during cutting) of the piece?
+  Get MDF:
+    a proper spoilboard
+    thick sheets for dode clamp jig
+    thin short-life sheets for underwaste
+  Create stl cutters:
+    two versions: polyTri.cutAtLeast & polyTri.cutAtMost
+    ability to stage cut through two bits
+      (I'm unclear on how the relative heights are calibrated; read the bookmarked article on 'tool length compensation')
   Determine mdf width, plan clamping jigs, make stls, make gcode for them
   set up machine
   buy trimmer & bits
@@ -495,14 +503,19 @@ Next steps:
   export gCode
   "cut air"
   debug
+  plan hinge & inlays & access recesses
+  inlay experiment
+  figure out how to get solyluna shapes into Python; just port the code?
   V: cut two pieces & try to fit them together
-  V: cut four more pieces
+  V: cut remaining ten pieces
+  V: flip relevant pieces for exterior cutting:
+    V: access recess cutting on L & R front-visible lower faces
+    V: hinge cutting on top and upper back faces
+    V: sol y luna guide cutting on upper front pieces
   V: cut upper & lower clamping negatives
-  V: glue
-  V: cut remaining six pieces
-  inlay experiment  
-  V: do inlay on top piece
-  plan hinge
+  V: tape the inside surfaces of the negatives to avoid glue sticking
+  V: glue the bottom six pieces
+  V: do inlay on front two pieces
   V: remaining gluing
   V: stain
   V: seal?
