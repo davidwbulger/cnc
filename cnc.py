@@ -140,7 +140,27 @@ def catToolPaths(TPList):
   return ToolPath(np.hstack([tp.nodes for tp in TPList]),
     np.hstack([tp.cutx + io for (tp,io) in zip(TPList, indexoffsets)]),
     np.concatenate([tp.rahe for tp in TPList]))
-    
+
+def thicknesser(dx, dy, dz, offset, feedrate, fname):
+  # Utility to plane a rectangle. Assumes zeroed to a point above the bottom left corner of the rectangle.
+  if dx<dy:
+    (dx,dy) = (dy,dx)
+    swapped = True
+  else:
+    swapped = False
+  numRows = 1 + np.floor(dy/offset)
+  y = np.linspace(0,dy,num=numRows)
+  nodes = np.vstack((np.pad(np.array([0,dx,dx,0]), (1,2*(numRows-2)), mode='wrap'),
+    np.hstack((0,np.kron(y,[1,1]))), np.hstack((0,np.repeat([-dz],2*numRows)))))
+  if swapped:
+    nodes = nodes[[1,0,2],:]
+  return ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([0]))
+  ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([0])).PathToGCode(feedrate, fname)
+
+  #   nodes: a 3xN array of node coordinates.
+  #   cutx: a 2xn array of cut indices (so kth cut follows .nodes[cutx[0,k]:cutx[1,k]]).
+  #   rahe: a length n vector of heights at which to do rapid movements before each cut.
+
 ######################################################################################################################################
 
 class PathGrid:
@@ -336,7 +356,7 @@ def addPLFs(a,b):
   z = np.interp(x, a[0,:], a[1,:]) + np.interp(x, b[0,:], b[1,:])
   return np.vstack([x,z])
   
-def pospar(plf):
+def pospar(plf):  #  "positive part"
   # Inputs a piecewise linear function (described by a 2-row Numpy array, with the first row non-descending).
   # Outputs max(0,plf) in the same format & over the same range.
 
@@ -453,3 +473,9 @@ def fitPWL(xy, ltol):
     fitto = gotoatmost
   return(xy[:,keepNodes])
 
+# Probably don't need after all:
+# def iterify(iteree):  #  borrowed from "kindall" at https://stackoverflow.com/questions/6710834/iterating-over-list-or-single-element-in-python
+#   try:
+#     yield from iter(iteree)
+#   except TypeError:
+#     yield iteree
