@@ -1,0 +1,13 @@
+Work locally in ./cnc.
+
+To add a new file:
+  create the file
+  git add [FILENAME]
+
+After making a change to the code:
+  Commit and upload the change, via these commands:
+  git commit -a -m "[MESSAGE DESCRIBING THE CHANGE]"
+  git push
+
+Can also try:
+  git status
