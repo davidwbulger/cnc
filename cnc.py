@@ -73,6 +73,7 @@ class ToolPath:
   def PathToGCode(self,feedrate,fname):
     # Create a g-code file corresponding to a ToolPath object.
     # self.rahe[0] = Absolute Safe Height; assume no obstacles at that height anywhere
+    # Note: this is currently tailored to use with Easel's controller, all coords relative to a starting point manually jogged to.
   
     # CONSTANTS:
     atol = 0.01  #  10 microns; well below machine precision
@@ -85,11 +86,12 @@ class ToolPath:
     fidout = open(fname, 'w')
   
     ## HEADER:
-    fidout.write("%\nO" + progname + "\nG17 G21 G40 G49 G80 G90\n")
-    fidout.write("G00 G54 X0. Y0.\nG43 H1 Z%.2f\n" % self.rahe[0])
+    fidout.write("%\nO" + progname + "\nG17 G21 G40\n")
+    # already at 0 # fidout.write("G00 X0. Y0.\n")
+    # Easel automatically pulls bit up # fidout.write("G43 H1 Z%.2f\n" % self.rahe[0])
   
     ## PATHS:
-    curpos = np.array([0,0,self.rahe[0]])  #  current position, as a row
+    curpos = np.array([0,0,30])  #  current position, as a row (Z won't be 30 but it should definitely change for first point)
     setfeedrate = False  #  it's not set yet. The machine should be told the feedrate on the first cut instruction.
     motion = None
 
@@ -118,7 +120,7 @@ class ToolPath:
       curpos = newpos
 
     ## FOOTER:
-    fidout.write("G00 Z%.2f\nG91 G28 X0. Y0.\nG90\nM30\n%%\n" % self.rahe[0])
+    fidout.write("G00 Z%.2f\nM30\n%%\n" % self.rahe[0])
     fidout.close()
 
   def plot(self, ax, color='black', linewidth=1):
@@ -141,25 +143,24 @@ def catToolPaths(TPList):
     np.hstack([tp.cutx + io for (tp,io) in zip(TPList, indexoffsets)]),
     np.concatenate([tp.rahe for tp in TPList]))
 
-def thicknesser(dx, dy, dz, offset, feedrate, fname):
-  # Utility to plane a rectangle. Assumes zeroed to a point above the bottom left corner of the rectangle.
-  if dx<dy:
-    (dx,dy) = (dy,dx)
+def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
+  # Utility to plane a rectangle.
+  # Cuts rectangle at height zht over rectangle [xran[0],xran[1]]x[yran[0],yran[1]].
+  # Uses safe height sht.
+  xwd = np.abs(np.diff(xran)[0])
+  ywd = np.abs(np.diff(yran)[0])
+  if xwd<ywd:
+    (xran,yran) = (yran,xran)
     swapped = True
   else:
     swapped = False
-  numRows = 1 + np.floor(dy/offset)
-  y = np.linspace(0,dy,num=numRows)
-  nodes = np.vstack((np.pad(np.array([0,dx,dx,0]), (1,2*(numRows-2)), mode='wrap'),
-    np.hstack((0,np.kron(y,[1,1]))), np.hstack((0,np.repeat([-dz],2*numRows)))))
+  numRows = 1 + np.floor(ywd/offset)
+  y = np.linspace(yran[0],yran[1],num=numRows)
+  nodes = np.vstack((np.pad(xran[[0,1,1,0]], (1,2*(numRows-2)), mode='wrap'),
+    np.hstack((0,np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
   if swapped:
     nodes = nodes[[1,0,2],:]
-  return ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([0]))
-  ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([0])).PathToGCode(feedrate, fname)
-
-  #   nodes: a 3xN array of node coordinates.
-  #   cutx: a 2xn array of cut indices (so kth cut follows .nodes[cutx[0,k]:cutx[1,k]]).
-  #   rahe: a length n vector of heights at which to do rapid movements before each cut.
+  ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([sht])).PathToGCode(feedrate, fname)
 
 ######################################################################################################################################
 
