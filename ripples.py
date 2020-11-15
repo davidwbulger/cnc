@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # PARAMETERS:
-radius = 30
+radius = 26
 depth = 2
 dpc = 0.5  #  depth per cut
 frate = 150
