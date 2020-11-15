@@ -121,7 +121,8 @@ class ToolPath:
 
     ## FOOTER:
     # fidout.write("G00 Z%.2f\nM30\n%%\n" % self.rahe[0])
-    fidout.write("M30\n%%\n" % self.rahe[0])
+    # fidout.write("M30\n%%\n" % self.rahe[0])
+    fidout.write("G00 Z%.2f\nX0. Y0.\nZ0.\nM30\n%%\n" % self.rahe[0])
     fidout.close()
 
   def plot(self, ax, color='black', linewidth=1):

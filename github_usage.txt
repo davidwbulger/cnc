@@ -5,6 +5,7 @@ To add a new file:
   git add [FILENAME]
 
 After making a change to the code:
+  git diff  #  if you forget what you did!
   Commit and upload the change, via these commands:
   git commit -a -m "[MESSAGE DESCRIBING THE CHANGE]"
   git push
