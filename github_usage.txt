@@ -11,3 +11,8 @@ After making a change to the code:
 
 Can also try:
   git status
+
+As of 15 November, I'm now editing this repo from two computers. Not much is different, only:
+  be especially careful to push changes after each session
+  at the start of each session, if the previous work was on the other computer, do:
+    git pull

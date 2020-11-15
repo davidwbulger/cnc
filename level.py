@@ -6,7 +6,7 @@ import numpy as np
 
 if len(sys.argv) != 9:
   print("Usage: python level.py lox hix loy hiy z safez offset feedrate")
-else
+else:
   xran = np.array([float(a) for a in sys.argv[1:3]])
   yran = np.array([float(a) for a in sys.argv[3:5]])
   zht = float(sys.argv[5])

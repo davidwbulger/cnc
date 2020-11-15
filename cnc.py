@@ -120,7 +120,8 @@ class ToolPath:
       curpos = newpos
 
     ## FOOTER:
-    fidout.write("G00 Z%.2f\nM30\n%%\n" % self.rahe[0])
+    # fidout.write("G00 Z%.2f\nM30\n%%\n" % self.rahe[0])
+    fidout.write("M30\n%%\n" % self.rahe[0])
     fidout.close()
 
   def plot(self, ax, color='black', linewidth=1):
@@ -149,15 +150,18 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
   # Uses safe height sht.
   xwd = np.abs(np.diff(xran)[0])
   ywd = np.abs(np.diff(yran)[0])
-  if xwd<ywd:
-    (xran,yran) = (yran,xran)
+  if True:  #  Condition ought to be "xwd<ywd:", but the Z & Y axes aren't quite perpendicular
+    (xran,yran,xwd,ywd) = (yran,xran,ywd,xwd)
     swapped = True
   else:
     swapped = False
-  numRows = 1 + np.floor(ywd/offset)
+  numRows = 2 + int(np.floor(ywd/offset))
   y = np.linspace(yran[0],yran[1],num=numRows)
-  nodes = np.vstack((np.pad(xran[[0,1,1,0]], (1,2*(numRows-2)), mode='wrap'),
-    np.hstack((0,np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
+  nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
+    np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
+  nodes = np.hstack((nodes, np.matmul(nodes[:,-1,None],np.array([[1,0]]))))
+  nodes[2,-2:0] = sht
+  #  print(nodes)  #  debugginh
   if swapped:
     nodes = nodes[[1,0,2],:]
   ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([sht])).PathToGCode(feedrate, fname)
