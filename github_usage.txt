@@ -17,3 +17,6 @@ As of 15 November, I'm now editing this repo from two computers. Not much is dif
   be especially careful to push changes after each session
   at the start of each session, if the previous work was on the other computer, do:
     git pull
+
+To undo last commit:
+  git reset --soft HEAD~1

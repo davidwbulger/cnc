@@ -10,17 +10,21 @@ import matplotlib.animation as animation
 ########################################################################################################################
 # PARAMETERS:
 
-initSeed = 7
-prain = 0.025  #  proportion of frames with a raindrop
-damping = 0.02
-wavespeed = 0.25  #  actually "stability parameter s" = c^2(delta t)^2/(delta x)^2 from Grigoryan
-numFrames = 100
-dropsize = 48
-dropradius = 0.76
+initSeed = 10
+action_animate = False
+action_gcode = True
+gcodeFrame = 46
+gcodeToolSeq = [{'bitrad':3, 'cude':3, 'speed':600}, {'bitrad':0.5, 'cude':0.7, 'speed':300}]
+prain = 0.05  #  proportion of frames with a raindrop
+gridres = 0.5 # 0.75  #  offset should be a multiple of this
+damping = 0.03*gridres
+wavespeed = 0.23  #  actually "stability parameter s" = c^2(delta t)^2/(delta x)^2 from Grigoryan
+numFrames = 200
+dropsize = 50*gridres**1.5
+dropradius = 0.6*gridres**0.25
 
 R = 120  #  semimajor radius
 r = 26  #  semiminor radius
-gridres = 0.75  #  offset should be a multiple of this
 maxdepth = 10
 mindepth = 0.5
 # snaptime
@@ -233,10 +237,12 @@ ax.set_zlim3d([-0.6*R, 0.6*R])
 fig.tight_layout()
 ax.set_clip_on(False)
 # framenum = 0
-# perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=42)
+# perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=16)
 anim = animation.FuncAnimation(fig, stepRipples, frames=update_time, fargs=(animlines,), interval=42, repeat=True)
 anim.running = True
-anim.direction = +1
+anim.direction = -1
+mng = plt.get_current_fig_manager()
+mng.window.state("zoomed")
 plt.show()
 ########################################################################################################################
 
