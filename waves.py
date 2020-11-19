@@ -10,13 +10,13 @@ import matplotlib.animation as animation
 ########################################################################################################################
 # PARAMETERS:
 
-np.random.seed(1)
-prain = 0.01  #  proportion of frames with a raindrop
-damping = 0.002
+initSeed = 7
+prain = 0.025  #  proportion of frames with a raindrop
+damping = 0.02
 wavespeed = 0.25  #  actually "stability parameter s" = c^2(delta t)^2/(delta x)^2 from Grigoryan
-numFrames = 200
-dropsize = 60
-dropradius = 0.36
+numFrames = 100
+dropsize = 48
+dropradius = 0.76
 
 R = 120  #  semimajor radius
 r = 26  #  semiminor radius
@@ -84,7 +84,7 @@ def reflectGhost(x,y,R,r):
 def stepRipples(framenum, animlines):
   # Now draw it:
   zg = zdeck[:,:,framenum]
-  ax.set_title(f"Frame {framenum} ; {np.mean(zg)}")
+  ax.set_title(f"Seed {initSeed}; Frame {framenum}")
   for (ix,(xl,yl,zlix)) in enumerate(zip(downx,downy,downzix)):
     animlines[ix].set_data(xl,yl)
     animlines[ix].set_3d_properties(zg.ravel()[zlix])
@@ -96,15 +96,15 @@ def oneDrop(zgrid):
   # Randomly choose a grid in the ellipse:
   hitInterior = False
   while not hitInterior:
-    xix = np.random.randint(0,2*N)
-    yix = np.random.randint(0,2*n)
-    hitInterior = interior[yix:yix+2, xix:xix+2].all()
-  #for i in [yix,yix+1]:
-  #  for j in [xix,xix+1]:
+    jx = np.random.randint(0,2*N)
+    iy = np.random.randint(0,2*n)
+    hitInterior = interior[iy:iy+2, jx:jx+2].all()
+  #for i in [iy,iy+1]:
+  #  for j in [jx,jx+1]:
   #    zgrid[i,j] += dropsize # * (np.random.rand() - 0.5)
-  #zgrid[yix,xix] += dropsize
-  return zgrid + dropsize * (np.exp(-((xgrid-xgrid[yix,xix])**2+(ygrid-ygrid[yix,xix])**2)/(2*dropradius**2))
-    - 0.25 * np.exp(-((xgrid-xgrid[yix,xix])**2+(ygrid-ygrid[yix,xix])**2)/(8*dropradius**2)))
+  #zgrid[iy,jx] += dropsize
+  return zgrid + dropsize * (np.exp(-((xgrid-xgrid[iy,jx])**2+(ygrid-ygrid[iy,jx])**2)/(2*dropradius**2))
+    - 0.25 * np.exp(-((xgrid-xgrid[iy,jx])**2+(ygrid-ygrid[iy,jx])**2)/(8*dropradius**2)))
 
 ########################################################################################################################
 # ADJUSTMENTS:
@@ -127,14 +127,41 @@ interior = (xgrid/R)**2 + (ygrid/r)**2 < 1
 inlist = np.flatnonzero(interior)  #  np.argwhere(interior.ravel())
 xlist = xgrid.ravel()[inlist]
 ylist = ygrid.ravel()[inlist]
-ghost = np.logical_and(np.logical_not(interior), np.logical_or(np.roll(interior,-1,0),
-  np.logical_or(np.roll(interior,1,0), np.logical_or(np.roll(interior,-1,1), np.roll(interior,1,1)))))
+
+# Calculate "ghost" nodes, the positions of their reflected images ("spectres"), and the linear combinations of
+# interior nodes that we'll use to circumpolate them:
+#ghost = np.logical_and(np.logical_not(interior), np.logical_or(np.roll(interior,-1,0),
+#  np.logical_or(np.roll(interior,1,0), np.logical_or(np.roll(interior,-1,1), np.roll(interior,1,1)))))
+ghost = np.logical_and(np.logical_not(interior), np.stack((
+  np.roll(interior,(1,0),(0,1)), np.roll(interior,(1,1),(0,1)), np.roll(interior,(0,1),(0,1)), 
+  np.roll(interior,(-1,1),(0,1)), np.roll(interior,(-1,0),(0,1)), np.roll(interior,(-1,-1),(0,1)), 
+  np.roll(interior,(0,-1),(0,1)), np.roll(interior,(1,-1),(0,1))
+  ),axis=2).any(axis=2))
 ghostlist = np.flatnonzero(ghost)  #  np.argwhere(ghost.ravel())
 spectres = np.array([reflectGhost(x,y,R,r) for (x,y) in zip(xgrid.ravel()[ghostlist], ygrid.ravel()[ghostlist])])
-##  print(spectres)
-##  print(reflectGhost(xgrid[0,0], ygrid[0,0], R, r))
-##  print(xgrid.ravel()[ghostlist])
-##  print(ghostlist)
+
+# excrapolator_ind[i,j] will be the linear index to the jth vertex of the triangle approximating the ith spectre, and
+# excrapolator_wt[i,j] will be its corresponding barycentric coordinate.
+excrapolator_ind = np.zeros((len(ghostlist), 3),dtype=np.intc)
+excrapolator_wt = np.zeros((len(ghostlist), 3))
+corners = np.array([[0,0], [0,1], [1,0], [1,1]])
+for (sx,spec) in enumerate(spectres):
+  distance = np.Inf
+  for jx in range(max(0,int(np.floor(spec[0]/gridres))+N-1), min(2*N,int(np.ceil(spec[0]/gridres))+N+1)):
+    for iy in range(max(0,int(np.floor(spec[1]/gridres))+n-1), min(2*n,int(np.ceil(spec[1]/gridres))+n+1)):
+      for omit in range(4):
+        xyind = np.ravel_multi_index(tuple(([iy,jx] + corners[list(range(omit))+list(range(omit+1,4)),:]).T), xgrid.shape)
+        # xyind = [iy,jx] + corners[list(range(omit))+list(range(omit+1,4)),:]
+        xy = np.vstack((xgrid.ravel()[xyind], ygrid.ravel()[xyind])).T
+        centroid = np.mean(xy, axis=0)
+        candis = np.linalg.norm(centroid-spec)
+        if candis < distance:
+          distance = candis
+          excrapolator_ind[sx,:] = xyind
+  xyind = excrapolator_ind[sx,:]
+  xy = np.vstack((xgrid.ravel()[xyind], ygrid.ravel()[xyind])).T
+  excrapolator_wt[sx,:] = np.linalg.solve(np.vstack((xy.T, [1,1,1])), np.vstack((spec[0],spec[1],1))).T
+
 zgrid = 0 * xgrid
 lag1z = zgrid.copy()
 lag2z = zgrid.copy()
@@ -142,40 +169,74 @@ zgrid = oneDrop(zgrid)  #  hit the pool with one random raindrop
 
 # Calculate the deck of zgrids:
 zdeck = np.zeros(zgrid.shape + (numFrames,))
+np.random.seed(initSeed)
 for fnum in range(numFrames):
   # Calculate reflected heights for ghost points:
-  if False:
-    excrapolator = interp2d(xlist, ylist, zgrid.ravel()[inlist])
-    for (eachghost, im) in zip(ghostlist, spectres):
-      zgrid.ravel()[eachghost] = excrapolator(im[0],im[1])
+  zgrid *= interior
+  for (eachghost, ind, wt) in zip(ghostlist, excrapolator_ind, excrapolator_wt):
+    zgrid.ravel()[eachghost] = sum(zgrid.ravel()[ind] * wt)
   # Now do a step of the PDE:
   if True:
     lag2z = lag1z.copy()
     lag1z = zgrid.copy()
-    zgrid = ((2-4*wavespeed)*lag1z - (1-damping)*lag2z +
-      wavespeed*(np.roll(lag1z,1,0) + np.roll(lag1z,-1,0) + np.roll(lag1z,1,1) + np.roll(lag1z,-1,1))) / (1+damping)
+    #zgrid = ((2-4*wavespeed)*lag1z - (1-damping)*lag2z +
+    #  wavespeed*(np.roll(lag1z,1,0) + np.roll(lag1z,-1,0) + np.roll(lag1z,1,1) + np.roll(lag1z,-1,1))) / (1+damping)
+    zgrid = ((2-6*wavespeed)*lag1z - (1-damping)*lag2z +
+      wavespeed*(np.roll(lag1z,1,0) + np.roll(lag1z,-1,0) + np.roll(lag1z,1,1) + np.roll(lag1z,-1,1) +
+      0.5*(np.roll(lag1z,(1,1),(0,1)) + np.roll(lag1z,(-1,1),(0,1)) + np.roll(lag1z,(1,-1),(0,1)) +
+      np.roll(lag1z,(-1,-1),(0,1))))) / (1+damping)
   # Now maybe a raindrop:
   if np.random.rand() < prain: zgrid = oneDrop(zgrid)
   zdeck[:,:,fnum] = zgrid.copy()
 
 # Also create downsampled lines for plotting:
-downyvals = ymargin[range(1,2*n,3)]
+downyvals = ymargin[range(1,2*n,1)]
 downx = [xlist[ylist==yval] for yval in downyvals]
 downy = [ylist[ylist==yval] for yval in downyvals]
 downzix = [inlist[ylist==yval] for yval in downyvals]
 
 ########################################################################################################################
 # SET UP THE ANIMATION:
+def update_time():
+    t = 0
+    t_max = numFrames
+    while True:
+        t = (t + anim.direction) % numFrames
+        yield t
+
+def on_press(event):
+    if event.key.isspace():
+        if anim.running:
+            anim.event_source.stop()
+        else:
+            anim.event_source.start()
+        anim.running ^= True
+    elif event.key == 'left':
+        anim.direction = -1
+    elif event.key == 'right':
+        anim.direction = +1
+
+    # Manually update the plot
+    # if event.key in ['left','right']:
+    #    t = anim.frame_seq.next()
+    #    stepRipples(t,animlines)
+    #    plt.draw()
 
 # Now actually create the figure & pass the above callback to FuncAnimation:
 fig = plt.figure()
+fig.canvas.mpl_connect('key_press_event', on_press)
 ax = fig.add_subplot(projection="3d")
 animlines = [ax.plot(xl,yl,zgrid.ravel()[zlix],'black',linewidth=0.5)[0] for (xl,yl,zlix) in zip(downx,downy,downzix)]
-ax.set_xlim3d([-R, R])
-ax.set_ylim3d([-R, R])
-ax.set_zlim3d([-R, R])
-framenum = 0
-perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=42)  #  unlikely to achieve this speed!
+ax.set_xlim3d([-0.6*R, 0.6*R])
+ax.set_ylim3d([-0.6*R, 0.6*R])
+ax.set_zlim3d([-0.6*R, 0.6*R])
+fig.tight_layout()
+ax.set_clip_on(False)
+# framenum = 0
+# perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=42)
+anim = animation.FuncAnimation(fig, stepRipples, frames=update_time, fargs=(animlines,), interval=42, repeat=True)
+anim.running = True
+anim.direction = +1
 plt.show()
 ########################################################################################################################
 
