@@ -8,10 +8,12 @@ import struct
 import re
 import os
 import numbers
+#import warnings
+#warnings.filterwarnings("error")
 
-######################################################################################################################################
-####    DEFINE CLASSES:    ###########################################################################################################
-######################################################################################################################################
+############################################################################################################
+####    DEFINE CLASSES:    #################################################################################
+############################################################################################################
 
 class polyTri:
   def __init__(self,fname):
@@ -25,7 +27,8 @@ class polyTri:
       triList = []
       while line:
         if re.match("^\s*outer loop", line):
-          triList.append(np.vstack([np.fromstring(re.sub("\s*vertex\s*","",fid.readline()),dtype=float,sep=' ') for ix in [0,1,2]]))
+          triList.append(np.vstack([
+            np.fromstring(re.sub("\s*vertex\s*","",fid.readline()),dtype=float,sep=' ') for ix in [0,1,2]]))
         line = fid.readline()
       fid.close()
       self.facets = np.array(triList,ndmin=3)
@@ -36,7 +39,8 @@ class polyTri:
       facets = np.zeros((numTri,3,3))
       for tx in range(numTri):
         fid.read(12)  #  discard normal vector
-        facets[tx,:,:] = np.array([[struct.unpack('<f', fid.read(4))[0] for cx in range(3)] for rx in range(3)]) 
+        facets[tx,:,:] = np.array([[struct.unpack('<f', fid.read(4))[0]
+          for cx in range(3)] for rx in range(3)]) 
         fid.read(2)  #  discard 'attribute byte count'
       fid.close()
       self.facets = facets
@@ -44,7 +48,7 @@ class polyTri:
   def __str__(self):
     return(self.facets.__str__())
 
-######################################################################################################################################
+############################################################################################################
 
 class ToolPath:
   # Class to represent a sequence of tool motions.
@@ -59,21 +63,24 @@ class ToolPath:
     self.rahe = rahe
 
   def __str__(self):
-    cutlen = sum([np.linalg.norm(self.nodes[:,j+1]-self.nodes[:,j]) for cx in self.cutx.T for j in range(cx[0],cx[1]-1)])
+    cutlen = sum([np.linalg.norm(self.nodes[:,j+1]-self.nodes[:,j])
+      for cx in self.cutx.T for j in range(cx[0],cx[1]-1)])
     m = np.min(self.nodes,1)
     M = np.max(self.nodes,1)
     return(f"ToolPath object with {self.cutx.shape[1]} cuts and {self.nodes.shape[1]} nodes in total."
-      " Total cut length %.2f within box [%.2f,%.2f]x[%.2f,%.2f]x[%.2f,%.2f]." % (cutlen,m[0],M[0],m[1],M[1],m[2],M[2]))
+      " Total cut length %.2f within box [%.2f,%.2f]x[%.2f,%.2f]x[%.2f,%.2f]." %
+      (cutlen,m[0],M[0],m[1],M[1],m[2],M[2]))
 
   def afxform(self, A):
     # Applies the affine transformation described by the 4x4 matrix A to the nodes of self. Returns a copy.
     # Obviously this will need to be rethought if A[2,0:3] isn't [0,0,1].
-    return ToolPath(np.matmul(A,np.vstack((self.nodes,[1]*self.nodes.shape[1])))[0:3,:], self.cutx, self.rahe)
+    return ToolPath(np.matmul(A,np.vstack((self.nodes,[1]*self.nodes.shape[1])))[0:3,:],self.cutx,self.rahe)
 
   def PathToGCode(self,feedrate,fname):
     # Create a g-code file corresponding to a ToolPath object.
     # self.rahe[0] = Absolute Safe Height; assume no obstacles at that height anywhere
-    # Note: this is currently tailored to use with Easel's controller, all coords relative to a starting point manually jogged to.
+    # Note: this is currently tailored to use with Easel's controller, all coords relative to a starting
+    # point manually jogged to.
   
     # CONSTANTS:
     atol = 0.01  #  10 microns; well below machine precision
@@ -91,8 +98,8 @@ class ToolPath:
     # Easel automatically pulls bit up # fidout.write("G43 H1 Z%.2f\n" % self.rahe[0])
   
     ## PATHS:
-    curpos = np.array([0,0,30])  #  current position, as a row (Z won't be 30 but it should definitely change for first point)
-    setfeedrate = False  #  it's not set yet. The machine should be told the feedrate on the first cut instruction.
+    curpos = np.array([0,0,30])  #  current pos, as a row (Z won't be 30 but it will change for 1st point)
+    setfeedrate = False  #  it's not set yet. The machine should be told the rate on the 1st G01.
     motion = None
 
     for (cx,saht) in zip(self.cutx.T,self.rahe):
@@ -167,11 +174,15 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
     nodes = nodes[[1,0,2],:]
   ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([sht])).PathToGCode(feedrate, fname)
 
-######################################################################################################################################
+############################################################################################################
 
 class PathGrid:
-  # A PathGrid is a system of paths, each of constant y, with y increasing. Within each path, z varies as x increases. This definition
-  # is not remotely isotropic, but the idea is to set up a PathGrid as a sequence of cuts, and then reorient it as necessary.
+  # A PathGrid is a system of paths, each of constant y, with y increasing. Within each path, z varies as x
+  # increases. This definition is not remotely isotropic, but the idea is to set up a PathGrid as a sequence
+  # of parallel cuts, and then reorient it as necessary.
+
+  # At some stage I should probably refactor this so that a PathGrid is a list of dictionaries rather than a
+  # dictionary of arrays and lists.
 
   def __init__(self, y, xz):
     # Create a PathGrid with ordinates 'y' and corresponding paths 'xz.'
@@ -204,19 +215,33 @@ class PathGrid:
 
   def whereBelow(self, other):
     # Trims a PathGrid to only the parts where self is below other.
-    # Return structure is not a PathGrid; it's a list (one entry per y value) of lists (one entry per disconnected interval) of xz
-    # cutting paths with fixed y.
+    # Return structure is not a PathGrid; it's a list (one entry per y value) of lists (one entry per
+    # disconnected interval) of xz cutting paths with fixed y.
     dg = (other-self).pospar()  #  "difference grid"
-    segl = [np.hstack((
-      np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3, xzp[1,1:]>1e-3),0,False).astype(int))==1),
-      2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1],xzp[1,1:]), False).astype(int))==-1)
-      )) for xzp in dg.xz]
-    return [[np.concatenate((
+    try:
+      segl = [np.hstack((
+        np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),0,False).astype(int))==1),
+        2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3), False).astype(int))==-1)
+        )) for xzp in dg.xz]
+    except:
+      for (ix, xzp) in enumerate(dg.xz):
+        epha=np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),0,False).astype(int))==1)
+        ephb=2+np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),False).astype(int))==-1)
+        try:
+          ephc = np.hstack((epha, ephb))
+        except:
+          print(ix)
+          print(xzp)
+          print(epha)
+          print(ephb)
+          breakpoint()
+    xzll = [[np.concatenate((
           np.array([[xzd[0,se[0]]],[np.interp(xzd[0,se[0]],xzs[0,:],xzs[1,:])]]),
           xzs[:,np.logical_and(xzs[0,:]>xzd[0,se[0]], xzs[0,:]<xzd[0,se[1]-1])],
           np.array([[xzd[0,se[1]-1]],[np.interp(xzd[0,se[1]-1],xzs[0,:],xzs[1,:])]])),1)
         for se in seg]
       for (yp,seg,xzd,xzs) in zip(self.y,segl,dg.xz,self.xz)]
+    return ([yp for (yp,xzl) in zip(self.y,xzll) if len(xzl)>0],[xzl for xzl in xzll if len(xzl)>0])
 
   def maxabs(self):
     return max([max(abs(xzp[1,:])) for xzp in self.xz])
@@ -224,9 +249,9 @@ class PathGrid:
   def nodeCount(self):
     return sum([xzp.shape[1] for xzp in self.xz])
 
-  # Now overload arithmetic operators. Generally these apply to the z component. The y attribute won't be altered, and a copy isn't
-  # necessary; there's no foreseeable use-case of a PathGrid being constructed and used in calculations, and then having its y values
-  # changed.
+  # Now overload arithmetic operators. Generally these apply to the z component. The y attribute won't be
+  # altered, and a copy isn't necessary; there's no foreseeable use-case of a PathGrid being constructed and
+  # used in calculations, and then having its y values changed.
 
   def __neg__(self):
     # return PathGrid(self.y, [np.array([[1],[-1]]) * xzp for xzp in self.xz])
@@ -256,11 +281,11 @@ class PathGrid:
   def __rsub__(self, other):
     return -self + other
 
-  def castToMold(self, ballrad, ltol, floor):
-    # Converts "self," describing an actual cut surface, to a corresponding "mold," describing the lowest surface the drillbit's
-    # spherical head's centre can traverse. Both are PathGrids.
-    # The drillbit's head's radius is ballrad. The lateral tolerance for path equality is ltol. Don't cut below floor.
-    # If no floor is needed, set floor to np.NINF.
+  def castToMold(self, ballrad, ltol, floor=np.NINF):
+    # Converts "self," describing an actual cut surface, to a corresponding "mold," describing the lowest
+    # surface the drillbit's spherical head's tip can traverse. Both are PathGrids. The drillbit's head's
+    # radius is ballrad. The lateral tolerance for path equality is ltol. Don't cut below floor. If no floor
+    # is needed, set floor to np.NINF.
   
     mxz = [None for _ in self.xz]
     for j,(yp,xzp) in enumerate(zip(self.y, self.xz)):
@@ -275,29 +300,35 @@ class PathGrid:
           xzrad = np.sqrt(ballrad**2-(alty-yp)**2)  #  reduced radius of avoidance zone
           # First avoid spheres:
           for node in altxz.T:
-            vex = np.abs(xgrid - node[0]) < xzrad  #  indeX of points coincident with sphere under VErtical projection
+            # indeX of points coincident with sphere under VErtical projection:
+            vex = np.abs(xgrid - node[0]) < xzrad
             zgrid[vex] = np.maximum(zgrid[vex], node[1] + np.sqrt(xzrad**2 - (xgrid[vex]-node[0])**2))
           # Now avoid cylinders:
           for nx in range(1,altxz.shape[1]):
             segwid = altxz[0,nx]-altxz[0,nx-1]
             if segwid > ltol:
-              seglen = np.linalg.norm(altxz[:,nx]-altxz[:,nx-1])
+              seglen = np.linalg.norm(altxz[:,nx]-altxz[:,nx-1])  #  NINF-NINF producing warnings
               segslo = (altxz[1,nx]-altxz[1,nx-1])/segwid
               edgex = altxz[0,nx-1]-(altxz[1,nx]-altxz[1,nx-1])*xzrad/seglen
               edgez = altxz[1,nx-1]+(altxz[0,nx]-altxz[0,nx-1])*xzrad/seglen
               vex = np.logical_and(xgrid>edgex, xgrid<edgex+segwid)
               zgrid[vex] = np.maximum(zgrid[vex], edgez + segslo * (xgrid[vex]-edgex))
       # Now reduce load by approximating zgrid more efficiently:
-      mxz[j] = fitPWL(np.vstack([xgrid,zgrid]),ltol)
+      mxz[j] = fitPWL(np.vstack([xgrid,zgrid-ballrad]),ltol)  #  -ballrad since tracking tip, not centre
     return PathGrid(self.y, mxz)
   
+  def moldToCast(self, ballrad, ltol):
+    # Inverts the above function. Assumes no floor.
+    return -((-self).castToMold(ballrad,ltol,np.NINF))
+
   def roundJoint(self,ballrad,ltol):
-    # The idea is to minimally modify the PathGrid "self" so as to be tangible from above & below with a ball-end drill bit with end
-    # radius "ballrad."
+    # The idea is to minimally modify the PathGrid "self" so as to be tangible from above & below with a
+    # ball-end drill bit with end radius "ballrad."
   
-    # This works best under the condition that all parts of the original surface are tangible from above OR below.
-    # Under that condition, we can round the concave & convex extremities in either order with identical results.
-    return (-((-(self.castToMold(ballrad,ltol,np.NINF))).castToMold(2*ballrad,ltol,np.NINF))).castToMold(ballrad,ltol,np.NINF)
+    # This works best under the condition that all parts of the original surface are tangible from above OR
+    # below. Under that condition, we can round the concave & convex extremities in either order with
+    # identical results.
+    return self.castToMold(ballrad,ltol).moldToCast(2*ballrad,ltol).castToMold(ballrad,ltol)
   
   def plot(self, ax, color='black'):
     # Plot a PathGrid on the 3D axis "ax", in the given color.
@@ -305,11 +336,12 @@ class PathGrid:
       ax.plot(xzp[0,:], yp*np.ones(xzp.shape[1]), xzp[1,:], color, linewidth=1)
 
   def pacePathGrid(self, shpaid, abssh, cude):
-    # "Pace" a target PathGrid (self), by creating a ToolPath that works its way down to the target depth from an initial stockheight
-    # (described by shpaid---a PathGrid, or a scalar to indicate starting with a flat block), cutting no more than the prescribed
-    # cutting depth (cude) on each path. As close as possible to a constant cut depth is left for the final cut, with the idea that it
-    # will result in an evener finish. The "absolute stock height" (abssh) is a height at which rapid movement is always safe, used
-    # between passes.
+    # "Pace" a target PathGrid (self), by creating a ToolPath that works its way down to the target depth
+    # from an initial stockheight (described by shpaid---a PathGrid, or a scalar to indicate starting with a
+    # flat block), cutting no more than the prescribed cutting depth (cude) on each path. As close as
+    # possible to a constant cut depth is left for the final cut, with the idea that it will result in an
+    # evener finish. The "absolute stock height" (abssh) is a height at which rapid movement is always safe,
+    # used between passes.
   
     wath = shpaid - self  #  a PathGrid representing the waste depth
     maxwaste = wath.maxoxy()
@@ -318,10 +350,11 @@ class PathGrid:
       raise PathGridError("No cutting required in pacePathGrid.")
     cutlevels = [maxwaste - cude*l for l in range(1,numcuts)] + [0]  #  includes target cut at end
 
-    # Here we want to build the ToolPath in a loop. Unfortunately (though understandably), iteratively appending to numpy arrays
-    # would create new copies at each iteration, and be laughably inefficient. But it's hard to predict how much memory to allocate
-    # for the arrays. Therefore, in this loop we'll build two lists: a list of single-cut paths, and a same-length list of safe
-    # heights for rapid motion between them. Then use compileToolPath to convert that to a ToolPath.
+    # Here we want to build the ToolPath in a loop. Unfortunately (though understandably), iteratively
+    # appending to numpy arrays would create new copies at each iteration, and be laughably inefficient.
+    # But it's hard to predict how much memory to allocate for the arrays. Therefore, in this loop we'll
+    # build two lists: a list of single-cut paths, and a same-length list of safe heights for rapid motion
+    # between them. Then use compileToolPath to convert that to a ToolPath.
     scpaths = []
     safehts = [abssh]
     steptar = shpaid
@@ -348,14 +381,194 @@ class PathGrid:
               safehts.append(maxcrop(curheight, curpos, [cutp[0][0,0],yp]))
               startOfLevel = False
             else:
-              safehts.append(max(maxcrop(curheight,[curpos[0],yp], [cutp[0][0,0],yp]), maxcrop(steptar,curpos, [cutp[0][0,0],yp])))
+              safehts.append(max(maxcrop(curheight,[curpos[0],yp], [cutp[0][0,0],yp]),
+                maxcrop(steptar,curpos, [cutp[0][0,0],yp])))
           safehts += [maxcrop(curheight,[cutp[j-1][0,-1],yp],[cutp[j][0,0],yp]) for j in range(1,len(cutp))]
           scpaths += [np.vstack((cu[0,:], yp*np.ones(cu.shape[1]), cu[1,:])) for cu in cutp]
           curpos = [scpaths[-1][0,-1], yp]
     return compileToolPath(scpaths, safehts)
 
+  def MultiToolPG(self, shpaid, abssh, toolSeq, regions=[lambda x,y:np.full(x.shape,True)]):
+    # This creates a sequence of ToolPaths (one per tool in the provided sequence of ball-end drill bits, of
+    # presumably decreasing radius), each working its way down from an initial stockheight, in general via a
+    # sequence of not-very-deep cuts. Probably in practice the toolSeq will have length 1 (a single bit) or
+    # 2 (a rough cut followed by a fine cut).
+    # Inputs:
+    #   self:    the target pathgrid
+    #   shpaid:  initial stock height [PathGrid or scalar]
+    #   abssh:   absolute safe height [scalar]
+    #   toolSeq: list of dictionaries defining (in cut order, coarse to fine):
+    #     bitrad:  RADIUS (NOT DIAMETER) of bit, assumed to be ball-nose
+    #     cude:    depth of wood it can remove in each pass
+    #     ds:      offset for this tool will be ds times self's offset
+    #   regions: if provided, an assumed exhaustive list of vectorised membership tests for [x,y]. On all but the
+    #     final of the fine cuts, these regions will be handled separately, in sequence. This facilitates manual
+    #     hints as to cut order. A slight overlap is fine.
+
+    # Most of the logic here deals with the first tool in the list. The rest are handled via recursion.
+
+    # Calculate this tool's target centre depth & resulting stock depth:
+    # buffer = sum([tool['cude'] for tool in toolSeq[1:]])  #  minimum waste to leave for subsequent tools
+    buffer = 0.2*toolSeq[-1]['cude']  #  minimum waste to leave for the final fine cut; may need tweaking
+    ballrad = toolSeq[0]['bitrad']
+    target = (self+buffer).castToMold(ballrad, 0.2*ballrad, np.NINF
+      ).downsample(toolSeq[0]['ds'])  #  target for this tool
+
+    # There's probably a better way to deal with this, but at this point we'll convert shpaid to a PathGrid
+    # if it's just a scalar:
+    if isinstance(shpaid, numbers.Number):
+      shpaid = PathGrid(target.y, [np.vstack((xzp[0,:],np.full(xzp.shape[1],shpaid))) for xzp in target.xz])
+    else:
+      shpaid = shpaid.castToMold(ballrad, 0.2*ballrad, np.NINF
+        ).downsample(toolSeq[0]['ds'])  #  adjusted for bit shape
+
+    # Now we want to build a ToolPath in a loop, but shouldn't do that directly, for memory-handling
+    # reasons. So we build two lists:
+    scpaths = []  #  a list of single-cut paths, and
+    safehts = []  #  a corresponding list of safe heights for rapid motion between them.
+    curpos = None
+    for reg in (regions if len(toolSeq)==1 else [lambda x,y:np.full(x.shape,True)]):
+      regtar = target.clipToRegion(reg)
+      regshe = shpaid.clipToRegion(reg)
+      steptar = regshe
+      # A PathGrid representing the waste depth in this region (excluding buffer, if finest tool):
+      wath = regshe-regtar
+      maxwaste = wath.maxoxy()  #  scalar max over X & Y
+      numcuts = max(0, int(np.ceil(maxwaste/toolSeq[0]['cude'])))
+      if numcuts > 0:
+        cutlevels = [maxwaste - toolSeq[0]['cude']*l for l in range(1,numcuts)]
+        if cutlevels[-1] > 0.05*toolSeq[0]['bitrad']: cutlevels.append(0)  #  the target cut at the end
+        for cule in cutlevels:
+          curheight = steptar  #  set current stock height to target height at previous step
+          steptar = regshe - (wath - cule).pospar()
+          (cuty,cutxz) = steptar.whereBelow(curheight)  #  just the actual cutting needing doing
+          (curpos,scpaths_appendix,safehts_appendix) = sequenceCuts(
+            curpos, abssh, curheight, steptar, cuty, cutxz)
+          scpaths += scpaths_appendix
+          safehts += safehts_appendix
+      
+    # If we're using the finest tool, there's 1 remaining cut to do, which should NOT be split into regions.
+    if len(toolSeq)==1:
+      # Append more cuts in scpaths & safehts:
+      target = self.castToMold(ballrad, 0.2*ballrad, np.NINF
+        ).downsample(toolSeq[0]['ds'])  #  target for this tool [note: ds should be 1, but just in case]
+      curheight = steptar  #  stock height remaining after previous step
+      (cuty,cutxz) = target.whereBelow(curheight)
+      (curpos, scpaths_appendix, safehts_appendix) = sequenceCuts(
+        curpos, abssh, curheight, target, cuty, cutxz)
+      scpaths += scpaths_appendix
+      safehts += safehts_appendix
+
+    # Return value, with recursive call if we aren't already looking at the finest tool:
+    TPList = [compileToolPath(scpaths,safehts)]
+    if len(toolSeq)>1:
+      # 'Upsample'; determine current stock height from target depth:
+      # newStockHeight = (-((-target).castToMold(ballrad, 0.2*ballrad, np.NINF))).upsample(self)
+      # newStockHeight = target.upsample(self)  #  incorporating the mold-to-cast conversion
+      newStockHeight = target.upsample(self).moldToCast(ballrad,0.2*ballrad)
+      # Call MultiToolPG recursively for remaining tools:
+      TPList += self.MultiToolPG(newStockHeight, abssh, toolSeq[1:], regions=regions)
+    return TPList
+
+  def downsample(self, ds):
+    # Return a coarser PathGrid with every dsth row from self.
+    if ds==1:
+      return self
+    else:
+      retind = np.arange(int(ds/2),len(self.y),ds)
+      return PathGrid(self.y[retind], [self.xz[k] for k in retind])
+
+  # def upsample(self, finer):
+  #   # Return a finer PathGrid, every dsth row of which is from self. The new rows are at infinite height.
+  #   moldz = [np.PINF * np.ones(xzp.shape[1]) for xzp in finer.xz]
+  #   for (yp,xzp) in zip(self.y, self.xz):
+  #     yind = next(j for (j,ypf) in enumerate(finer.y) if ypf==yp)
+  #     moldz[yind] = xzp[1,:]
+  #   print(len(finer.xz))
+  #   print(len(moldz))
+  #   print([[xzp.shape, mzp.shape] for (xzp,mzp) in zip(finer.xz,moldz)])
+  #   print(self.xz[1])
+  #   print(finer.xz[4])
+  #   
+  #   upxz = [np.vstack((xzp[0,:],zp)) for (xzp,zp) in zip(finer.xz,moldz)]
+  #   return PathGrid(finer.y, upxz)
+  #   #return PathGrid(finer.y, [np.vstack((xzp[0,:],zp)) for (xzp,zp) in zip(finer.xz,moldz)])
+
+  def upsample(self, finer):
+    # Return a finer PathGrid, every dsth row of which is from self. The new rows are at infinite height.
+    moldxz = [np.vstack((xzp[0,:],np.full(xzp.shape[1],np.PINF))) for xzp in finer.xz]
+    for (yp,xzp) in zip(self.y, self.xz):
+      yind = next(j for (j,ypf) in enumerate(finer.y) if ypf==yp)
+      moldxz[yind] = xzp
+    return PathGrid(finer.y, moldxz)
+
+  def clipToRegion(self, reg):
+    # Return a new PathGrid, just the parts of self that obey the condition in 'reg'.
+    # Each region is assumed to be convex!!!
+
+    # This proved too simple, as it misses the parts of edges that intersect the region boundary (and these can be
+    # very long, especially in higher, coarser layers).
+    # mask = [reg(xzp[0,:],yp) for (xzp,yp) in zip(self.xz,self.y)]
+    # newy = self.y[[any(maskp) for maskp in mask]]
+    # newxz = [xzp[:,maskp] for (xzp,maskp) in zip(self.xz,mask) if any(maskp)]
+
+    # Instead, we'll go through the rows one by one, refine them to high resolution, mask them, and then renode.
+    # (Note that the method used in pospar won't work because we don't have a linearity assumption in the region's
+    # boundary.) For now I will hard-code the high resolution at 1mm, which should be fine if we always overlap by
+    # at least that much.
+    resol = 1
+    newy = []
+    newxz = []
+    for (kx,(yp,xzp)) in enumerate(zip(self.y,self.xz)):
+      x = np.sort(np.unique(np.concatenate((xzp[0,:]+resol,np.arange(xzp[0,0],xzp[0,-1],resol)))))
+      x = x[reg(x,yp)]
+      if len(x)>0:
+        newy.append(yp)
+        z = np.interp(x, xzp[0,:], xzp[1,:])
+        newxz.append(fitPWL(np.vstack((x,z)),1e-3))  #  can afford fine tol here, since mostly can reuse nodes
+
+    return PathGrid(np.array(newy), newxz)
+
+def sequenceCuts(curpos, abssh, curheight, steptar, cuty, cutxz):
+  # Slightly awkward, but I'm extracting this as a function since it's done twice in MultiToolPG.
+  # Plan the cuts described in cuty & cutxz, to be appended to MultiToolPG's scpaths and safehts.
+  # curpos is need to determine which order to do the cuts in, and curheight & steptar help to compute the
+  # safe movement heights between consecutive cuts.
+
+  # lists for return values:
+  safehts_appendix = []
+  scpaths_appendix = []
+
+  startOfLevel = True  #  so it knows to avoid at curheight rather than steptar
+
+  # Reverse cut list in the y direction if necessary:
+  if curpos != None and abs(curpos[1]-cuty[-1]) < abs(curpos[1]-cuty[0]):
+    cuty.reverse()
+    cutxz.reverse()
+      
+  # Now queue up everything in cutlist to be cut:
+  for (yp, cutp) in zip(cuty, cutxz):
+    if curpos == None:
+      safehts_appendix.append(abssh)
+    else:
+      if abs(curpos[0]-cutp[-1][0,-1]) < abs(curpos[0]-cutp[0][0,0]):
+        cutp = [np.fliplr(cu) for cu in reversed(cutp)]  #  do these cuts with decreasing x
+      if startOfLevel:
+        safehts_appendix.append(maxcrop(curheight, curpos, [cutp[0][0,0],yp]))
+        startOfLevel = False
+      else:
+        safehts_appendix.append(max(maxcrop(curheight,[curpos[0],yp], [cutp[0][0,0],yp]),
+          maxcrop(steptar,curpos, [cutp[0][0,0],yp])))
+    safehts_appendix += [maxcrop(curheight,[cutp[j-1][0,-1],yp],[cutp[j][0,0],yp])
+      for j in range(1,len(cutp))]
+    scpaths_appendix += [np.vstack((cu[0,:], yp*np.ones(cu.shape[1]), cu[1,:])) for cu in cutp]
+    curpos = [scpaths_appendix[-1][0,-1], yp]
+
+  return (curpos, scpaths_appendix, safehts_appendix)
+
 def addPLFs(a,b):
-  # Inputs two lists of 2D numpy arrays of two rows each (x & z), increasing in x, describing each PLF (piece-wise linear function).
+  # Inputs two lists of 2D numpy arrays of two rows each (x & z), increasing in x, describing each PLF
+  # (piece-wise linear function).
   # Outputs another PLF, in the same format, being a+b.
   # Assumes a & b start & end at the same x values.
   x = np.sort(np.unique(np.concatenate((a[0,:],b[0,:]))))
@@ -363,7 +576,7 @@ def addPLFs(a,b):
   return np.vstack([x,z])
   
 def pospar(plf):  #  "positive part"
-  # Inputs a piecewise linear function (described by a 2-row Numpy array, with the first row non-descending).
+  # Inputs a piecewise linear function (described by a 2-row Numpy array with the first row non-descending).
   # Outputs max(0,plf) in the same format & over the same range.
 
   px = plf[1,:]>0  #  indices of positive values
@@ -374,7 +587,7 @@ def pospar(plf):  #  "positive part"
     [(np.array([[1],[0]])*plf[:,[0,-1]])[:, np.logical_not(px[[0,-1]])]]))
   return nodes[:,np.argsort(nodes[0,:])]
   
-# This was a method of PathGrid, but I want it to work sensibly if the 'paid' argument is just a constant, too.
+# This was a method of PathGrid, but I want it to work right if the 'paid' argument is just a constant, too.
 def maxcrop(paid, p0, p1):
   # Returns the greatest height in paid within the closed region [x[0],x[1]]*[y[0],y[1]]*[-inf,inf].
 
@@ -394,7 +607,7 @@ def maxcrop(paid, p0, p1):
     retval = paid  #  which is in this case hopefully just a numeric value
   return retval
 
-######################################################################################################################################
+############################################################################################################
 
 class Error(Exception):  #  Base class for exceptions in this module.
   pass
@@ -411,12 +624,12 @@ class ToolPathError(Error):  #  Exception raised for errors in the input.
   def __init__(self, message):
     self.message = message
 
-######################################################################################################################################
-####    DEFINE UTILITIES:    #########################################################################################################
-######################################################################################################################################
+############################################################################################################
+####    DEFINE UTILITIES:    ###############################################################################
+############################################################################################################
 
-# Affine transformation matrices ("ATMs") should probably be a class ... but that seems like a lot of reinventing, and also I may not
-# actually need much functionality.
+# Affine transformation matrices ("ATMs") should probably be a class ... but that seems like a lot of
+# reinventing, and also I may not actually need much functionality.
 
 def rotAround(x,y,theta):
   # Returns an ATM fixing z and rotating x and y an angle theta around (x,y).
@@ -440,19 +653,20 @@ def hackaspect(ax):
   ax.plot(xl, [yl[0],yl[0]], [zl[0],zl[0]], 'white')
   ax.plot(xl, [yl[1],yl[1]], [zl[1],zl[1]], 'white')
 
-######################################################################################################################################
+############################################################################################################
 # THE FUNCTIONS meanroundingup & fitPWL ARE ABOUT EFFICIENTLY TRACING A PATH WITH LINE SEGMENTS:
 
 def meanroundingup(a,b):
   return(int(0.75+(a+b)/2))  #  mean of integers a & b, but rounds up if sum is odd.
 
 def fitPWL(xy, ltol):
-  # Inputs a 2xN array of plane points, assumed to be increasing in x, and a lateral tolerance, and outputs a piecewise-linear
-  # approximation to the heights. Specifically, returns a subset of the entered nodes, minimising node count subject to preserving
-  # the path to within a tolerance.
+  # Inputs a 2xN array of plane points, assumed to be increasing in x, and a lateral tolerance, and outputs
+  # a piecewise-linear approximation to the heights. Specifically, returns a subset of the entered nodes,
+  # minimising node count subject to preserving the path to within a tolerance.
 
   # Use a greedy method to determine breakpoints. (Should then be refined, but maybe later.)
   N = xy.shape[1]
+  if N<2: return xy
   keepNodes = [False]*N
   keepNodes[0] = keepNodes[-1] = True  #  definitely want the first & last points!
   fitto = 0  #  index of how much of the curve we've approximated so far
@@ -477,11 +691,4 @@ def fitPWL(xy, ltol):
         gotoatmost = gototry-1
     keepNodes[gotoatmost] = True
     fitto = gotoatmost
-  return(xy[:,keepNodes])
-
-# Probably don't need after all:
-# def iterify(iteree):  #  borrowed from "kindall" at https://stackoverflow.com/questions/6710834/iterating-over-list-or-single-element-in-python
-#   try:
-#     yield from iter(iteree)
-#   except TypeError:
-#     yield iteree
+  return xy[:,keepNodes]

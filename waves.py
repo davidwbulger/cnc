@@ -2,7 +2,6 @@
 
 import cnc
 import numpy as np
-from scipy.interpolate import interp2d
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
@@ -13,8 +12,9 @@ import matplotlib.animation as animation
 initSeed = 10
 action_animate = False
 action_gcode = True
-gcodeFrame = 46
-gcodeToolSeq = [{'bitrad':3, 'cude':3, 'speed':600}, {'bitrad':0.5, 'cude':0.7, 'speed':300}]
+gcodeFrame = 111
+gcodeToolSeq = [{'bitrad':1.5,'cude':3,'ds':3},{'bitrad':0.5,'cude':0.7,'ds':1}]
+transpose = True  #  Rotate ellipse after construction so that cuts are the short way
 prain = 0.05  #  proportion of frames with a raindrop
 gridres = 0.5 # 0.75  #  offset should be a multiple of this
 damping = 0.03*gridres
@@ -84,16 +84,6 @@ def reflectGhost(x,y,R,r):
   if yneg: im[1] = -im[1]
   return im
 
-# The callback used to advance time one step & draw:
-def stepRipples(framenum, animlines):
-  # Now draw it:
-  zg = zdeck[:,:,framenum]
-  ax.set_title(f"Seed {initSeed}; Frame {framenum}")
-  for (ix,(xl,yl,zlix)) in enumerate(zip(downx,downy,downzix)):
-    animlines[ix].set_data(xl,yl)
-    animlines[ix].set_3d_properties(zg.ravel()[zlix])
-  return animlines
-
 # Add a raindrop:
 def oneDrop(zgrid):
   # We don't want every raindrop identical, so let's randomly perturb the heights at the points in a 2x2 grid.
@@ -109,6 +99,38 @@ def oneDrop(zgrid):
   #zgrid[iy,jx] += dropsize
   return zgrid + dropsize * (np.exp(-((xgrid-xgrid[iy,jx])**2+(ygrid-ygrid[iy,jx])**2)/(2*dropradius**2))
     - 0.25 * np.exp(-((xgrid-xgrid[iy,jx])**2+(ygrid-ygrid[iy,jx])**2)/(8*dropradius**2)))
+
+# Animation functions:
+
+# The callback used to advance time one step & draw:
+def stepRipples(framenum, animlines):
+  # Now draw it:
+  zg = zdeck[:,:,framenum]
+  ax.set_title(f"Seed {initSeed}; Frame {framenum}")
+  for (ix,(xl,yl,zlix)) in enumerate(zip(downx,downy,downzix)):
+    animlines[ix].set_data(xl,yl)
+    animlines[ix].set_3d_properties(zg.ravel()[zlix])
+  return animlines
+
+# Two functions allowing crude user control of the animation (space to start/stop; cursor L/R to set time direction):
+def update_time():
+    t = 0
+    t_max = numFrames
+    while True:
+        t = (t + anim.direction) % numFrames
+        yield t
+
+def on_press(event):
+    if event.key.isspace():
+        if anim.running:
+            anim.event_source.stop()
+        else:
+            anim.event_source.start()
+        anim.running ^= True
+    elif event.key == 'left':
+        anim.direction = -1
+    elif event.key == 'right':
+        anim.direction = +1
 
 ########################################################################################################################
 # ADJUSTMENTS:
@@ -193,90 +215,59 @@ for fnum in range(numFrames):
   if np.random.rand() < prain: zgrid = oneDrop(zgrid)
   zdeck[:,:,fnum] = zgrid.copy()
 
-# Also create downsampled lines for plotting:
-downyvals = ymargin[range(1,2*n,1)]
-downx = [xlist[ylist==yval] for yval in downyvals]
-downy = [ylist[ylist==yval] for yval in downyvals]
-downzix = [inlist[ylist==yval] for yval in downyvals]
-
 ########################################################################################################################
 # SET UP THE ANIMATION:
-def update_time():
-    t = 0
-    t_max = numFrames
-    while True:
-        t = (t + anim.direction) % numFrames
-        yield t
 
-def on_press(event):
-    if event.key.isspace():
-        if anim.running:
-            anim.event_source.stop()
-        else:
-            anim.event_source.start()
-        anim.running ^= True
-    elif event.key == 'left':
-        anim.direction = -1
-    elif event.key == 'right':
-        anim.direction = +1
+if action_animate:
+  # Create downsampled lines for plotting:
+  downyvals = ymargin[range(1,2*n,1)]
+  downx = [xlist[ylist==yval] for yval in downyvals]
+  downy = [ylist[ylist==yval] for yval in downyvals]
+  downzix = [inlist[ylist==yval] for yval in downyvals]
+  
+  # Now actually create the figure & pass the above callback to FuncAnimation:
+  fig = plt.figure()
+  fig.canvas.mpl_connect('key_press_event', on_press)
+  ax = fig.add_subplot(projection="3d")
+  animlines = [ax.plot(xl,yl,zgrid.ravel()[zlix],'black',linewidth=0.5)[0] for (xl,yl,zlix) in zip(downx,downy,downzix)]
+  ax.set_xlim3d([-0.6*R, 0.6*R])
+  ax.set_ylim3d([-0.6*R, 0.6*R])
+  ax.set_zlim3d([-0.6*R, 0.6*R])
+  fig.tight_layout()
+  ax.set_clip_on(False)
+  # framenum = 0
+  # perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=16)
+  anim = animation.FuncAnimation(fig, stepRipples, frames=update_time, fargs=(animlines,), interval=42, repeat=True)
+  anim.running = True
+  anim.direction = -1
+  mng = plt.get_current_fig_manager()
+  mng.window.state("zoomed")
+  plt.show()
 
-    # Manually update the plot
-    # if event.key in ['left','right']:
-    #    t = anim.frame_seq.next()
-    #    stepRipples(t,animlines)
-    #    plt.draw()
-
-# Now actually create the figure & pass the above callback to FuncAnimation:
-fig = plt.figure()
-fig.canvas.mpl_connect('key_press_event', on_press)
-ax = fig.add_subplot(projection="3d")
-animlines = [ax.plot(xl,yl,zgrid.ravel()[zlix],'black',linewidth=0.5)[0] for (xl,yl,zlix) in zip(downx,downy,downzix)]
-ax.set_xlim3d([-0.6*R, 0.6*R])
-ax.set_ylim3d([-0.6*R, 0.6*R])
-ax.set_zlim3d([-0.6*R, 0.6*R])
-fig.tight_layout()
-ax.set_clip_on(False)
-# framenum = 0
-# perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=16)
-anim = animation.FuncAnimation(fig, stepRipples, frames=update_time, fargs=(animlines,), interval=42, repeat=True)
-anim.running = True
-anim.direction = -1
-mng = plt.get_current_fig_manager()
-mng.window.state("zoomed")
-plt.show()
 ########################################################################################################################
+# WRITE THE GCODE:
 
-##  # CREATE SINGLE GRID:
-##  y = np.linspace(offset-semiminor, semiminor-offset, num=nrows)
-##  x = [(semimajor/semiminor)*np.arange(-np.sqrt(semiminor*semiminor-yp*yp), np.sqrt(semiminor*semiminor-yp*yp), min(1,offset)) for yp in y]
-##  # print([len(xp) for xp in x])
-##  dist = [np.sqrt((xp-semimajor)**2+yp**2)*nripples*np.pi/semimajor for (xp,yp) in zip(x,y)]  #  in radians of ripples
-##  # z = [(np.cos(distp)-1)*depth/2 for distp in dist]
-##  # z = [(np.cos(distp)-1)*depth/2 + depth-dpc for distp in dist]
-##  z = [np.sqrt(1.001 - (yp/semiminor)**2 - (xp/semimajor)**2) + 0.2*np.cos(0.32*xp-0.2*yp) for (xp,yp) in zip(x,y)]
-##  minz = min([min(zp) for zp in z])
-##  maxz = max([max(zp) for zp in z])
-##  slope = (maxdepth-mindepth)/(maxz-minz)
-##  intercept = -(slope*minz+maxdepth)
-##  z = [intercept + slope*zp for zp in z]
-##  xz = [np.vstack((xp,zp)) for (xp,zp) in zip(x,z)]
-##  taPG = cnc.PathGrid(y,xz)
-##  
-##  # CONVERT TO TOOLPATH:
-##  # Note that, currently, PacePathGrid is the only way to convert a PathGrid to a ToolPath. This code 'manually' handles the layers,
-##  # so we'll start by pretending that the safe cut per depth is huge to get the target ToolPath:
-##  taTP = taPG.pacePathGrid(0, 2, 20)
-##  
-##  fig = plt.figure()
-##  ax = fig.add_subplot(111, projection='3d') 
-##  taTP.plot(ax, 'red')
-##  cnc.hackaspect(ax)
-##  plt.show()
-##  
-##  # LAYERS:
-##  # This would automate the whole layers thing:
-##  # layers = cnc.catToolPaths([taTP.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,zadj],[0,0,0,1]])) for zadj in np.flip(np.arange(0,depth,dpc))])
-##  # layers.PathToGCode(frate, "ripples.gcode")
-##  
-##  # But instead I'll just do the one cut & manually jog & repeat.
-##  # taTP.PathToGCode(frate, "waves.gcode")
+if action_gcode:
+  # Construct PathGrid:
+  union = np.logical_or(interior, ghost)
+  zproc = zdeck[:,:,gcodeFrame]
+  zmax = np.max(zproc[interior])
+  zmin = np.min(zproc[interior])
+  zproc = ghost * 2 + interior * (-maxdepth + (maxdepth-mindepth) / (zmax-zmin) * (zproc-zmin))  #  2>0 prevents cutting
+  if transpose:
+    (xgrid, ygrid) = (ygrid.T, xgrid.T)
+    zproc = zproc.T
+    union = union.T
+  whichRows = union.any(axis=1)
+  y = ygrid[whichRows,0]  #  ymargin[whichRows]
+  x = [xgrid[ro,union[ro,:]] for ro in np.flatnonzero(whichRows)]
+  z = [zproc[ro,union[ro,:]] for ro in np.flatnonzero(whichRows)]
+  # xz = np.vstack((x,z))
+  xz = [np.vstack((xp,zp)) for (xp,zp) in zip(x,z)]
+  pg = cnc.PathGrid(y,xz)
+  #regions = [(lambda x,y:x<-58),(lambda x,y:np.logical_and(x>-62,x<2)),(lambda x,y:x>-2)]
+  regions = [(lambda x,y:x<1),(lambda x,y:x>-1)]
+  tplist = pg.MultiToolPG(0, 5, gcodeToolSeq, regions)
+  tplist[0].PathToGCode(500, "coarseEllipse.gcode")
+  tplist[1].PathToGCode(300, "fineEllipse.gcode")
+
