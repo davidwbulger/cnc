@@ -27,7 +27,6 @@ R = 120  #  semimajor radius
 r = 26  #  semiminor radius
 maxdepth = 10
 mindepth = 0.5
-# snaptime
 
 # THIS ISN'T QUITE SO SIMPLE. SHOULD ROUGH CUT WITH LARGER BIT BEFORE FINAL CUT(S?) WITH SMALLER. (OTHERWISE IT'S 20
 # CUTS!)
@@ -93,10 +92,6 @@ def oneDrop(zgrid):
     jx = np.random.randint(0,2*N)
     iy = np.random.randint(0,2*n)
     hitInterior = interior[iy:iy+2, jx:jx+2].all()
-  #for i in [iy,iy+1]:
-  #  for j in [jx,jx+1]:
-  #    zgrid[i,j] += dropsize # * (np.random.rand() - 0.5)
-  #zgrid[iy,jx] += dropsize
   return zgrid + dropsize * (np.exp(-((xgrid-xgrid[iy,jx])**2+(ygrid-ygrid[iy,jx])**2)/(2*dropradius**2))
     - 0.25 * np.exp(-((xgrid-xgrid[iy,jx])**2+(ygrid-ygrid[iy,jx])**2)/(8*dropradius**2)))
 
@@ -114,23 +109,23 @@ def stepRipples(framenum, animlines):
 
 # Two functions allowing crude user control of the animation (space to start/stop; cursor L/R to set time direction):
 def update_time():
-    t = 0
-    t_max = numFrames
-    while True:
-        t = (t + anim.direction) % numFrames
-        yield t
+  t = 0
+  t_max = numFrames
+  while True:
+    t = (t + anim.direction) % numFrames
+    yield t
 
 def on_press(event):
-    if event.key.isspace():
-        if anim.running:
-            anim.event_source.stop()
-        else:
-            anim.event_source.start()
-        anim.running ^= True
-    elif event.key == 'left':
-        anim.direction = -1
-    elif event.key == 'right':
-        anim.direction = +1
+  if event.key.isspace():
+    if anim.running:
+      anim.event_source.stop()
+    else:
+      anim.event_source.start()
+    anim.running ^= True
+  elif event.key == 'left':
+    anim.direction = -1
+  elif event.key == 'right':
+    anim.direction = +1
 
 ########################################################################################################################
 # ADJUSTMENTS:
@@ -156,8 +151,6 @@ ylist = ygrid.ravel()[inlist]
 
 # Calculate "ghost" nodes, the positions of their reflected images ("spectres"), and the linear combinations of
 # interior nodes that we'll use to circumpolate them:
-#ghost = np.logical_and(np.logical_not(interior), np.logical_or(np.roll(interior,-1,0),
-#  np.logical_or(np.roll(interior,1,0), np.logical_or(np.roll(interior,-1,1), np.roll(interior,1,1)))))
 ghost = np.logical_and(np.logical_not(interior), np.stack((
   np.roll(interior,(1,0),(0,1)), np.roll(interior,(1,1),(0,1)), np.roll(interior,(0,1),(0,1)), 
   np.roll(interior,(-1,1),(0,1)), np.roll(interior,(-1,0),(0,1)), np.roll(interior,(-1,-1),(0,1)), 
@@ -176,8 +169,7 @@ for (sx,spec) in enumerate(spectres):
   for jx in range(max(0,int(np.floor(spec[0]/gridres))+N-1), min(2*N,int(np.ceil(spec[0]/gridres))+N+1)):
     for iy in range(max(0,int(np.floor(spec[1]/gridres))+n-1), min(2*n,int(np.ceil(spec[1]/gridres))+n+1)):
       for omit in range(4):
-        xyind = np.ravel_multi_index(tuple(([iy,jx] + corners[list(range(omit))+list(range(omit+1,4)),:]).T), xgrid.shape)
-        # xyind = [iy,jx] + corners[list(range(omit))+list(range(omit+1,4)),:]
+        xyind = np.ravel_multi_index(tuple(([iy,jx]+corners[list(range(omit))+list(range(omit+1,4)),:]).T), xgrid.shape)
         xy = np.vstack((xgrid.ravel()[xyind], ygrid.ravel()[xyind])).T
         centroid = np.mean(xy, axis=0)
         candis = np.linalg.norm(centroid-spec)
@@ -205,8 +197,6 @@ for fnum in range(numFrames):
   if True:
     lag2z = lag1z.copy()
     lag1z = zgrid.copy()
-    #zgrid = ((2-4*wavespeed)*lag1z - (1-damping)*lag2z +
-    #  wavespeed*(np.roll(lag1z,1,0) + np.roll(lag1z,-1,0) + np.roll(lag1z,1,1) + np.roll(lag1z,-1,1))) / (1+damping)
     zgrid = ((2-6*wavespeed)*lag1z - (1-damping)*lag2z +
       wavespeed*(np.roll(lag1z,1,0) + np.roll(lag1z,-1,0) + np.roll(lag1z,1,1) + np.roll(lag1z,-1,1) +
       0.5*(np.roll(lag1z,(1,1),(0,1)) + np.roll(lag1z,(-1,1),(0,1)) + np.roll(lag1z,(1,-1),(0,1)) +
@@ -235,8 +225,6 @@ if action_animate:
   ax.set_zlim3d([-0.6*R, 0.6*R])
   fig.tight_layout()
   ax.set_clip_on(False)
-  # framenum = 0
-  # perfunctoryGlobalVariable = animation.FuncAnimation(fig, stepRipples, numFrames, fargs=(animlines,), interval=16)
   anim = animation.FuncAnimation(fig, stepRipples, frames=update_time, fargs=(animlines,), interval=42, repeat=True)
   anim.running = True
   anim.direction = -1
@@ -262,10 +250,8 @@ if action_gcode:
   y = ygrid[whichRows,0]  #  ymargin[whichRows]
   x = [xgrid[ro,union[ro,:]] for ro in np.flatnonzero(whichRows)]
   z = [zproc[ro,union[ro,:]] for ro in np.flatnonzero(whichRows)]
-  # xz = np.vstack((x,z))
   xz = [np.vstack((xp,zp)) for (xp,zp) in zip(x,z)]
   pg = cnc.PathGrid(y,xz)
-  #regions = [(lambda x,y:x<-58),(lambda x,y:np.logical_and(x>-62,x<2)),(lambda x,y:x>-2)]
   regions = [(lambda x,y:x<1),(lambda x,y:x>-1)]
   tplist = pg.MultiToolPG(0, 5, gcodeToolSeq, regions)
   tplist[0].PathToGCode(500, "coarseEllipse.gcode")

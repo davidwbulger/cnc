@@ -218,23 +218,10 @@ class PathGrid:
     # Return structure is not a PathGrid; it's a list (one entry per y value) of lists (one entry per
     # disconnected interval) of xz cutting paths with fixed y.
     dg = (other-self).pospar()  #  "difference grid"
-    try:
-      segl = [np.hstack((
-        np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),0,False).astype(int))==1),
-        2 + np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3), False).astype(int))==-1)
-        )) for xzp in dg.xz]
-    except:
-      for (ix, xzp) in enumerate(dg.xz):
-        epha=np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),0,False).astype(int))==1)
-        ephb=2+np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),False).astype(int))==-1)
-        try:
-          ephc = np.hstack((epha, ephb))
-        except:
-          print(ix)
-          print(xzp)
-          print(epha)
-          print(ephb)
-          breakpoint()
+    segl = [np.hstack((
+      np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),0,False).astype(int))==1),
+      2+np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),False).astype(int))==-1)
+      )) for xzp in dg.xz]
     xzll = [[np.concatenate((
           np.array([[xzd[0,se[0]]],[np.interp(xzd[0,se[0]],xzs[0,:],xzs[1,:])]]),
           xzs[:,np.logical_and(xzs[0,:]>xzd[0,se[0]], xzs[0,:]<xzd[0,se[1]-1])],
@@ -336,6 +323,8 @@ class PathGrid:
       ax.plot(xzp[0,:], yp*np.ones(xzp.shape[1]), xzp[1,:], color, linewidth=1)
 
   def pacePathGrid(self, shpaid, abssh, cude):
+    # This is probably obsolete now, but I won't remove it until I'm sure it's not useful.
+
     # "Pace" a target PathGrid (self), by creating a ToolPath that works its way down to the target depth
     # from an initial stockheight (described by shpaid---a PathGrid, or a scalar to indicate starting with a
     # flat block), cutting no more than the prescribed cutting depth (cude) on each path. As close as
@@ -401,9 +390,9 @@ class PathGrid:
     #     bitrad:  RADIUS (NOT DIAMETER) of bit, assumed to be ball-nose
     #     cude:    depth of wood it can remove in each pass
     #     ds:      offset for this tool will be ds times self's offset
-    #   regions: if provided, an assumed exhaustive list of vectorised membership tests for [x,y]. On all but the
-    #     final of the fine cuts, these regions will be handled separately, in sequence. This facilitates manual
-    #     hints as to cut order. A slight overlap is fine.
+    #   regions: if provided, an assumed exhaustive list of vectorised membership tests for [x,y]. On all
+    #     but the final of the fine cuts, these regions will be handled separately, in sequence. This
+    #     facilitates manual hints as to cut order. A slight overlap is fine.
 
     # Most of the logic here deals with the first tool in the list. The rest are handled via recursion.
 
@@ -463,8 +452,6 @@ class PathGrid:
     TPList = [compileToolPath(scpaths,safehts)]
     if len(toolSeq)>1:
       # 'Upsample'; determine current stock height from target depth:
-      # newStockHeight = (-((-target).castToMold(ballrad, 0.2*ballrad, np.NINF))).upsample(self)
-      # newStockHeight = target.upsample(self)  #  incorporating the mold-to-cast conversion
       newStockHeight = target.upsample(self).moldToCast(ballrad,0.2*ballrad)
       # Call MultiToolPG recursively for remaining tools:
       TPList += self.MultiToolPG(newStockHeight, abssh, toolSeq[1:], regions=regions)
@@ -478,22 +465,6 @@ class PathGrid:
       retind = np.arange(int(ds/2),len(self.y),ds)
       return PathGrid(self.y[retind], [self.xz[k] for k in retind])
 
-  # def upsample(self, finer):
-  #   # Return a finer PathGrid, every dsth row of which is from self. The new rows are at infinite height.
-  #   moldz = [np.PINF * np.ones(xzp.shape[1]) for xzp in finer.xz]
-  #   for (yp,xzp) in zip(self.y, self.xz):
-  #     yind = next(j for (j,ypf) in enumerate(finer.y) if ypf==yp)
-  #     moldz[yind] = xzp[1,:]
-  #   print(len(finer.xz))
-  #   print(len(moldz))
-  #   print([[xzp.shape, mzp.shape] for (xzp,mzp) in zip(finer.xz,moldz)])
-  #   print(self.xz[1])
-  #   print(finer.xz[4])
-  #   
-  #   upxz = [np.vstack((xzp[0,:],zp)) for (xzp,zp) in zip(finer.xz,moldz)]
-  #   return PathGrid(finer.y, upxz)
-  #   #return PathGrid(finer.y, [np.vstack((xzp[0,:],zp)) for (xzp,zp) in zip(finer.xz,moldz)])
-
   def upsample(self, finer):
     # Return a finer PathGrid, every dsth row of which is from self. The new rows are at infinite height.
     moldxz = [np.vstack((xzp[0,:],np.full(xzp.shape[1],np.PINF))) for xzp in finer.xz]
@@ -506,16 +477,10 @@ class PathGrid:
     # Return a new PathGrid, just the parts of self that obey the condition in 'reg'.
     # Each region is assumed to be convex!!!
 
-    # This proved too simple, as it misses the parts of edges that intersect the region boundary (and these can be
-    # very long, especially in higher, coarser layers).
-    # mask = [reg(xzp[0,:],yp) for (xzp,yp) in zip(self.xz,self.y)]
-    # newy = self.y[[any(maskp) for maskp in mask]]
-    # newxz = [xzp[:,maskp] for (xzp,maskp) in zip(self.xz,mask) if any(maskp)]
-
-    # Instead, we'll go through the rows one by one, refine them to high resolution, mask them, and then renode.
-    # (Note that the method used in pospar won't work because we don't have a linearity assumption in the region's
-    # boundary.) For now I will hard-code the high resolution at 1mm, which should be fine if we always overlap by
-    # at least that much.
+    # Go through the rows one by one, refine them to high resolution, mask them, and then renode. (Note that
+    # the method used in pospar won't work because we don't have a linearity assumption in the region's
+    # boundary.) For now I will hard-code the high resolution at 1mm, which should be fine if we always
+    # overlap by at least that much.
     resol = 1
     newy = []
     newxz = []
@@ -525,7 +490,7 @@ class PathGrid:
       if len(x)>0:
         newy.append(yp)
         z = np.interp(x, xzp[0,:], xzp[1,:])
-        newxz.append(fitPWL(np.vstack((x,z)),1e-3))  #  can afford fine tol here, since mostly can reuse nodes
+        newxz.append(fitPWL(np.vstack((x,z)),1e-3))  #  can afford fine tol, since mostly can reuse nodes
 
     return PathGrid(np.array(newy), newxz)
 
