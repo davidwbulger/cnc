@@ -6,15 +6,15 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
 
-########################################################################################################################
+##################################################################################################################
 # PARAMETERS:
 
-initSeed = 10
+initSeed = 2
 action_animate = False
 action_gcode = True
-gcodeFrame = 111
+gcodeFrame = 146
 gcodeToolSeq = [{'bitrad':1.5,'cude':3,'ds':3},{'bitrad':0.5,'cude':0.7,'ds':1}]
-transpose = True  #  Rotate ellipse after construction so that cuts are the short way
+transpose = False  #  Rotate ellipse after construction so that cuts are the short way
 prain = 0.05  #  proportion of frames with a raindrop
 gridres = 0.5 # 0.75  #  offset should be a multiple of this
 damping = 0.03*gridres
@@ -23,18 +23,18 @@ numFrames = 200
 dropsize = 50*gridres**1.5
 dropradius = 0.6*gridres**0.25
 
-R = 120  #  semimajor radius
-r = 26  #  semiminor radius
-maxdepth = 10
+r = 27  #  semiminor radius  
+R = r*(1+np.sqrt(5))/2  #  semimajor radius [golden ratio]
+maxdepth = 7.5
 mindepth = 0.5
 
-# THIS ISN'T QUITE SO SIMPLE. SHOULD ROUGH CUT WITH LARGER BIT BEFORE FINAL CUT(S?) WITH SMALLER. (OTHERWISE IT'S 20
-# CUTS!)
+# THIS ISN'T QUITE SO SIMPLE. SHOULD ROUGH CUT WITH LARGER BIT BEFORE FINAL CUT(S?) WITH SMALLER. (OTHERWISE IT'S
+# 20 CUTS!)
 dpc = 0.5  #  depth per cut
 frate = 150
 offset = 4  #  0.7
 
-########################################################################################################################
+##################################################################################################################
 # FUNCTIONS NEEDED:
 
 # The following three functions are needed for ellipse boundary calculations, and adapted from David Eberly's
@@ -107,7 +107,7 @@ def stepRipples(framenum, animlines):
     animlines[ix].set_3d_properties(zg.ravel()[zlix])
   return animlines
 
-# Two functions allowing crude user control of the animation (space to start/stop; cursor L/R to set time direction):
+# Two functions allowing crude user control of the animation (space to start/stop; L/R to set time direction):
 def update_time():
   t = 0
   t_max = numFrames
@@ -127,18 +127,18 @@ def on_press(event):
   elif event.key == 'right':
     anim.direction = +1
 
-########################################################################################################################
+##################################################################################################################
 # ADJUSTMENTS:
 
 # Ensure the top, bottom, left & right of the ellipse are neat:
 R = gridres * (np.floor(R/gridres) - 0.01)
 r = gridres * (np.floor(r/gridres) - 0.01)
 
-########################################################################################################################
+##################################################################################################################
 # SET UP THE ELLIPSE'S ARRAYS:
 
-# Just once, at initialisation, we need to find the image of each ghost point when reflected into the ellipse through
-# the nearest point on the ellipse's boundary.
+# Just once, at initialisation, we need to find the image of each ghost point when reflected into the ellipse
+# through the nearest point on the ellipse's boundary.
 N = int(np.ceil(R/gridres))  #  2N+1 columns (including ghost margins)
 n = int(np.ceil(r/gridres))  #  2n+1 rows (including ghost margins)
 xmargin = gridres * np.arange(-N,N+1)
@@ -159,8 +159,8 @@ ghost = np.logical_and(np.logical_not(interior), np.stack((
 ghostlist = np.flatnonzero(ghost)  #  np.argwhere(ghost.ravel())
 spectres = np.array([reflectGhost(x,y,R,r) for (x,y) in zip(xgrid.ravel()[ghostlist], ygrid.ravel()[ghostlist])])
 
-# excrapolator_ind[i,j] will be the linear index to the jth vertex of the triangle approximating the ith spectre, and
-# excrapolator_wt[i,j] will be its corresponding barycentric coordinate.
+# excrapolator_ind[i,j] will be the linear index to the jth vertex of the triangle approximating the ith spectre,
+# and excrapolator_wt[i,j] will be its corresponding barycentric coordinate.
 excrapolator_ind = np.zeros((len(ghostlist), 3),dtype=np.intc)
 excrapolator_wt = np.zeros((len(ghostlist), 3))
 corners = np.array([[0,0], [0,1], [1,0], [1,1]])
@@ -169,7 +169,8 @@ for (sx,spec) in enumerate(spectres):
   for jx in range(max(0,int(np.floor(spec[0]/gridres))+N-1), min(2*N,int(np.ceil(spec[0]/gridres))+N+1)):
     for iy in range(max(0,int(np.floor(spec[1]/gridres))+n-1), min(2*n,int(np.ceil(spec[1]/gridres))+n+1)):
       for omit in range(4):
-        xyind = np.ravel_multi_index(tuple(([iy,jx]+corners[list(range(omit))+list(range(omit+1,4)),:]).T), xgrid.shape)
+        xyind = np.ravel_multi_index(tuple(([iy,jx]+corners[list(range(omit))+list(range(omit+1,4)),:]).T),
+          xgrid.shape)
         xy = np.vstack((xgrid.ravel()[xyind], ygrid.ravel()[xyind])).T
         centroid = np.mean(xy, axis=0)
         candis = np.linalg.norm(centroid-spec)
@@ -205,7 +206,7 @@ for fnum in range(numFrames):
   if np.random.rand() < prain: zgrid = oneDrop(zgrid)
   zdeck[:,:,fnum] = zgrid.copy()
 
-########################################################################################################################
+##################################################################################################################
 # SET UP THE ANIMATION:
 
 if action_animate:
@@ -219,20 +220,21 @@ if action_animate:
   fig = plt.figure()
   fig.canvas.mpl_connect('key_press_event', on_press)
   ax = fig.add_subplot(projection="3d")
-  animlines = [ax.plot(xl,yl,zgrid.ravel()[zlix],'black',linewidth=0.5)[0] for (xl,yl,zlix) in zip(downx,downy,downzix)]
+  animlines = [ax.plot(xl,yl,zgrid.ravel()[zlix],'black',linewidth=0.5)[0]
+    for (xl,yl,zlix) in zip(downx,downy,downzix)]
   ax.set_xlim3d([-0.6*R, 0.6*R])
   ax.set_ylim3d([-0.6*R, 0.6*R])
   ax.set_zlim3d([-0.6*R, 0.6*R])
   fig.tight_layout()
   ax.set_clip_on(False)
-  anim = animation.FuncAnimation(fig, stepRipples, frames=update_time, fargs=(animlines,), interval=42, repeat=True)
+  anim = animation.FuncAnimation(fig,stepRipples,frames=update_time,fargs=(animlines,),interval=42,repeat=True)
   anim.running = True
   anim.direction = -1
   mng = plt.get_current_fig_manager()
   mng.window.state("zoomed")
   plt.show()
 
-########################################################################################################################
+##################################################################################################################
 # WRITE THE GCODE:
 
 if action_gcode:
@@ -241,7 +243,24 @@ if action_gcode:
   zproc = zdeck[:,:,gcodeFrame]
   zmax = np.max(zproc[interior])
   zmin = np.min(zproc[interior])
-  zproc = ghost * 2 + interior * (-maxdepth + (maxdepth-mindepth) / (zmax-zmin) * (zproc-zmin))  #  2>0 prevents cutting
+  # DEBUGGING: print([zmin, zmax])
+  zproc = ghost*2 + interior*(-maxdepth + (maxdepth-mindepth)/(zmax-zmin)*(zproc-zmin))  #  2>0 prevents cutting
+  # DEBUGGING: zmax = np.max(zproc[interior])
+  # DEBUGGING: zmin = np.min(zproc[interior])
+  # DEBUGGING: print([zmin, zmax])
+
+  # DEBUGGING: fig = plt.figure()
+  # DEBUGGING: ax = fig.add_subplot(projection="3d")
+  # DEBUGGING: surf = ax.plot_surface(xgrid, ygrid, zproc, linewidth=0, antialiased=False)
+  # DEBUGGING: ax.set_xlim3d([-0.6*R, 0.6*R])
+  # DEBUGGING: ax.set_ylim3d([-0.6*R, 0.6*R])
+  # DEBUGGING: ax.set_zlim3d([-0.6*R, 0.6*R])
+  # DEBUGGING: fig.tight_layout()
+  # DEBUGGING: ax.set_clip_on(False)
+  # DEBUGGING: mng = plt.get_current_fig_manager()
+  # DEBUGGING: mng.window.state("zoomed")
+  # DEBUGGING: plt.show()
+
   if transpose:
     (xgrid, ygrid) = (ygrid.T, xgrid.T)
     zproc = zproc.T
@@ -252,8 +271,7 @@ if action_gcode:
   z = [zproc[ro,union[ro,:]] for ro in np.flatnonzero(whichRows)]
   xz = [np.vstack((xp,zp)) for (xp,zp) in zip(x,z)]
   pg = cnc.PathGrid(y,xz)
-  regions = [(lambda x,y:x<1),(lambda x,y:x>-1)]
-  tplist = pg.MultiToolPG(0, 5, gcodeToolSeq, regions)
-  tplist[0].PathToGCode(500, "coarseEllipse.gcode")
+  tplist = pg.MultiToolGreedy(0, gcodeToolSeq)
+  tplist[0].PathToGCode(600, "coarseEllipse.gcode")
   tplist[1].PathToGCode(300, "fineEllipse.gcode")
 

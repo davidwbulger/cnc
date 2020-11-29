@@ -1,5 +1,5 @@
 # CNC utilities module.
-# davidwbulger@gmail.com, 15 August 2020
+# davidwbulger@gmail.com, started 5 August 2020
 
 # Assume Cartesian coordinates and millimetres.
 
@@ -54,31 +54,39 @@ class ToolPath:
   # Class to represent a sequence of tool motions.
   # Attributes are:
   #   nodes: a 3xN array of node coordinates.
-  #   cutx: a 2xn array of cut indices (so kth cut follows .nodes[cutx[0,k]:cutx[1,k]]).
-  #   rahe: a length n vector of heights at which to do rapid movements before each cut.
+  #   taxis: a 2xR array of taxis settings, so, e.g., a column [n,0] switches to mode G0 when moving from node n.
+  #          Second row should just be 0s & 1s. Require taxis[0,0]=0 so we have a taxis mode at outset.
 
-  def __init__(self, nodes, cutx, rahe):
+  def __init__(self, nodes, taxis):
+    if nodes[:,[0,-1]].any():
+      raise ToolPathError("First and last node must be the origin.")
+    if taxis[0,0]!=0 or taxis[0,-1]!=nodes.shape[1]-1 or np.any(np.diff(taxis[0,:])<1):
+      breakpoint()
+      raise ToolPathError(
+        "Taxis change nodes (first row of taxis) must run increasingly from first to last node index.")
+    if not all(np.logical_or(taxis[1,:]==0, taxis[1,:]==1)):
+      raise ToolPathError("Taxis changes (second row of taxis) must be binary.")
     self.nodes = nodes
-    self.cutx = cutx
-    self.rahe = rahe
+    self.taxis = taxis
 
   def __str__(self):
-    cutlen = sum([np.linalg.norm(self.nodes[:,j+1]-self.nodes[:,j])
-      for cx in self.cutx.T for j in range(cx[0],cx[1]-1)])
+    cuts = [nodes[:,taxis[0,j]:(taxis[0,j+1]+1)] for j in range(taxis.shape[1]-1) if taxis[1,j]==1]
+    cutlen = sum([sum(np.linalg.norm(np.diff(cut,axis=1),axis=0)) for cut in cuts])
+    raps = [nodes[:,taxis[0,j]:(taxis[0,j+1]+1)] for j in range(taxis.shape[1]-1) if taxis[1,j]==0]
+    raplen = sum([sum(np.linalg.norm(np.diff(rap,axis=1),axis=0)) for rap in raps])
     m = np.min(self.nodes,1)
     M = np.max(self.nodes,1)
-    return(f"ToolPath object with {self.cutx.shape[1]} cuts and {self.nodes.shape[1]} nodes in total."
-      " Total cut length %.2f within box [%.2f,%.2f]x[%.2f,%.2f]x[%.2f,%.2f]." %
-      (cutlen,m[0],M[0],m[1],M[1],m[2],M[2]))
+    return(f"ToolPath object with {len(cuts)} cuts and {self.nodes.shape[1]} nodes in total."
+      " Total cut length %.2f and rapid movement length %.2f within box [%.2f,%.2f]x[%.2f,%.2f]x[%.2f,%.2f]." %
+      (cutlen,raplen,m[0],M[0],m[1],M[1],m[2],M[2]))
 
   def afxform(self, A):
     # Applies the affine transformation described by the 4x4 matrix A to the nodes of self. Returns a copy.
     # Obviously this will need to be rethought if A[2,0:3] isn't [0,0,1].
-    return ToolPath(np.matmul(A,np.vstack((self.nodes,[1]*self.nodes.shape[1])))[0:3,:],self.cutx,self.rahe)
+    return ToolPath(np.matmul(A,np.vstack((self.nodes,[1]*self.nodes.shape[1])))[0:3,:],self.taxis)
 
   def PathToGCode(self,feedrate,fname):
     # Create a g-code file corresponding to a ToolPath object.
-    # self.rahe[0] = Absolute Safe Height; assume no obstacles at that height anywhere
     # Note: this is currently tailored to use with Easel's controller, all coords relative to a starting
     # point manually jogged to.
   
@@ -95,62 +103,48 @@ class ToolPath:
     ## HEADER:
     fidout.write("%\nO" + progname + "\nG17 G21 G40\n")
     # already at 0 # fidout.write("G00 X0. Y0.\n")
-    # Easel automatically pulls bit up # fidout.write("G43 H1 Z%.2f\n" % self.rahe[0])
+    # Easel automatically pulls bit up to about [0,0,5] before starting. Presumably it moves back to origin.
+    # TEST THIS THOUGH!!!!!!!!!!!!!!!!!!
   
     ## PATHS:
-    curpos = np.array([0,0,30])  #  current pos, as a row (Z won't be 30 but it will change for 1st point)
     setfeedrate = False  #  it's not set yet. The machine should be told the rate on the 1st G01.
-    motion = None
-
-    for (cx,saht) in zip(self.cutx.T,self.rahe):
-      # DO RAPID MOVE UP TO SAfeHeighT, TO NEXT (x,y), & then down to (z):
-      newpos = self.nodes[:,cx[0]]
-      if curpos[2]<saht:
-        if not motion==0:
-          fidout.write("G00 ")
-          motion = 0
-        fidout.write("Z%.2f\n" % saht)
-      if not np.allclose(curpos[0:2], newpos[0:2], rtol=0, atol=atol):
-        if not motion==0:
-          fidout.write("G00 ")
-          motion = 0
-        fidout.write("X%.2f Y%.2f\n" % tuple(newpos[0:2]))
-      for newpos in self.nodes[:,cx[0]:cx[1]].T:
-        if not motion==1:
-          fidout.write("G01 ")
-          motion = 1
+    for j in range(self.taxis.shape[1]-1):
+      # taxis mode is taxis[1,j]
+      # sequence of nodes whither to move is nodes[:,taxis[0,j]+1:taxis[0,j+1]+1]
+      fidout.write(f"G0{self.taxis[1,j]} ")  #  set motion mode (cutting or rapid)
+      for newpos in self.nodes[:,self.taxis[0,j]+1:self.taxis[0,j+1]+1].T: 
         fidout.write("X%.2f Y%.2f Z%.2f" % tuple(newpos))
-        if not setfeedrate:
+        if self.taxis[1,j] and not setfeedrate:
           fidout.write(" F%d" % feedrate)
           setfeedrate = True
         fidout.write("\n")
-      curpos = newpos
 
     ## FOOTER:
-    # fidout.write("G00 Z%.2f\nM30\n%%\n" % self.rahe[0])
-    # fidout.write("M30\n%%\n" % self.rahe[0])
-    fidout.write("G00 Z%.2f\nX0. Y0.\nZ0.\nM30\n%%\n" % self.rahe[0])
+    fidout.write("G00 Z5.\nM30\n%%\n" % self.rahe[0])  #  retract 5mm
     fidout.close()
 
   def plot(self, ax, color='black', linewidth=1):
     # Plot a ToolPath on the 3D axis "ax", in the given color.
-    for cx in self.cutx.T:
-      ax.plot(*self.nodes[:,cx[0]:cx[1]], color, linewidth=linewidth)
+    for j in range(self.taxis.shape[1]-1):
+      if self.taxis[1,j]:  #  only the cut paths, not the motions.
+        ax.plot(*self.nodes[:,taxis[0,j]:taxis[0,j+1]+1], color, linewidth=linewidth)
 
-def compileToolPath(paths, hts):
+def compileToolPath(paths, taxes):
   # Combine compatible lists of 3D paths and heights into a ToolPath object.
-  nodes = np.hstack(paths)
+  # Each starts and stops from the origin (so they should be prepared individually as fairly large operations)
+  nodes = np.hstack([np.zeros((3,1))]+paths)
   cumpathlengths = np.cumsum([path.shape[1] for path in paths])
-  cutx = np.vstack((np.insert(cumpathlengths[0:-1],0,0), cumpathlengths))
-  rahe = np.array(hts)
-  return ToolPath(nodes, cutx, rahe)
+  taxis = np.row_stack((np.hstack((0,cumpathlengths[:-1])),taxes))
+  return ToolPath(nodes, taxis)
 
 def catToolPaths(TPList):
+  raise ToolPathError("This isn't yet updated for the new ToolPath definition.")
   # Joins the ToolPaths in TPList.
-  indexoffsets = np.cumsum([0]+[tp.nodes.shape[1] for tp in TPList[0:-1]])
-  return ToolPath(np.hstack([tp.nodes for tp in TPList]),
-    np.hstack([tp.cutx + io for (tp,io) in zip(TPList, indexoffsets)]),
-    np.concatenate([tp.rahe for tp in TPList]))
+  indexoffsets = np.cumsum([0]+[tp.nodes.shape[1]-1 for tp in TPList[0:-1]])
+  return ToolPath(np.hstack([tp.nodes[:,0:-1] for tp in TPList[0:-1]] + [TPList[-1].nodes]),
+    np.vstack([np.hstack([tp.taxis[0,0:-1]+io for (tp,io) in zip(TPList[0:-1],indexoffsets)] +
+      [TPList[-1].taxis[0,:]+indexoffsets[-1]]),
+      np.hstack([tp.taxis[1,0:-1] for tp in TPList[0:-1]]+[TPList[-1].taxis[1,:]])]))
 
 def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
   # Utility to plane a rectangle.
@@ -192,7 +186,7 @@ class PathGrid:
       raise PathGridError("PathGrid attribute y must be a Numpy NDArray.")
     if not all(isinstance(xzp, np.ndarray) for xzp in xz):
       raise PathGridError("PathGrid attribute xz must be a list of Numpy NDArrays.")
-    if any (np.diff(y) <= 0):
+    if len(y)>1 and any (np.diff(y) <= 0):
       raise PathGridError("PathGrid attribute y must be strictly increasing.")
     if any(any(np.diff(xzp[0,:])<0) for xzp in xz):
       raise PathGridError("Each 2D path in PathGrid attribute xz must be non-decreasing.")
@@ -210,25 +204,41 @@ class PathGrid:
     # returns the scalar maximum of z over x & y
     return max([max(xzp[1,:]) for xzp in self.xz])
 
+  def maxoseg(self, segment):
+    # returns scalar maximum z height over the segment from segment[:,0] to segment[:,1], interpolated
+    if np.diff(segment[1,:]):
+      try:
+       return max([np.interp(np.interp(yp,segment[1,:],segment[0,:]),xzp[0,:],xzp[1,:])  #  self's hgt at intersec
+         - np.interp(yp,segment[1,:],segment[2,:])  #  segment's height at intersection
+         for (yp,xzp) in zip(self.y,self.xz) if yp>=min(segment[1,:]) and yp<=max(segment[1,:])])
+      except:
+       breakpoint()
+    else:
+      xzp = next(xzp for (yp,xzp) in zip(self.y,self.xz) if yp==segment[1,0])  #  assume existence & uniqueness
+      # Find x values of nodes within segment and endpoint of segment:
+      xChek=np.hstack((xzp[0,np.logical_and(xzp[0,:]>min(segment[0,:]),xzp[0,:]<max(segment[0,:]))],segment[0,:]))
+      return np.max(np.interp(xChek,xzp[0,:],xzp[1,:])-np.interp(xChek,segment[0,:],segment[2,:]))
+
   def pospar(self):
     return PathGrid(self.y, [pospar(xzp) for xzp in self.xz])
 
+  def min(self,other):
+    return PathGrid(self.y, [minPLFs(xza,xzb) for (xza,xzb) in zip(self.xz,other.xz)])
+
   def whereBelow(self, other):
     # Trims a PathGrid to only the parts where self is below other.
-    # Return structure is not a PathGrid; it's a list (one entry per y value) of lists (one entry per
-    # disconnected interval) of xz cutting paths with fixed y.
+    # Return structure is not a PathGrid; it's a list of continuous xyz cut-paths. (Each will have constant y.)
     dg = (other-self).pospar()  #  "difference grid"
     segl = [np.hstack((
       np.argwhere(np.diff(np.insert(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),0,False).astype(int))==1),
       2+np.argwhere(np.diff(np.append(np.logical_or(xzp[1,:-1]>1e-3,xzp[1,1:]>1e-3),False).astype(int))==-1)
       )) for xzp in dg.xz]
-    xzll = [[np.concatenate((
-          np.array([[xzd[0,se[0]]],[np.interp(xzd[0,se[0]],xzs[0,:],xzs[1,:])]]),
-          xzs[:,np.logical_and(xzs[0,:]>xzd[0,se[0]], xzs[0,:]<xzd[0,se[1]-1])],
-          np.array([[xzd[0,se[1]-1]],[np.interp(xzd[0,se[1]-1],xzs[0,:],xzs[1,:])]])),1)
-        for se in seg]
-      for (yp,seg,xzd,xzs) in zip(self.y,segl,dg.xz,self.xz)]
-    return ([yp for (yp,xzl) in zip(self.y,xzll) if len(xzl)>0],[xzl for xzl in xzll if len(xzl)>0])
+    xzll = [[yp,np.concatenate((
+      np.array([[xzd[0,se[0]]],[np.interp(xzd[0,se[0]],xzs[0,:],xzs[1,:])]]),
+      xzs[:,np.logical_and(xzs[0,:]>xzd[0,se[0]], xzs[0,:]<xzd[0,se[1]-1])],
+      np.array([[xzd[0,se[1]-1]],[np.interp(xzd[0,se[1]-1],xzs[0,:],xzs[1,:])]])),1)]
+      for (yp,seg,xzd,xzs) in zip(self.y,segl,dg.xz,self.xz) for se in seg]
+    return ([np.row_stack((y_xz[1][0,:],np.full(y_xz[1].shape[1],y_xz[0]),y_xz[1][1,:])) for y_xz in xzll])
 
   def maxabs(self):
     return max([max(abs(xzp[1,:])) for xzp in self.xz])
@@ -268,11 +278,11 @@ class PathGrid:
   def __rsub__(self, other):
     return -self + other
 
-  def castToMold(self, ballrad, ltol, floor=np.NINF):
+  def castToMold(self, ballrad, ltol, floor=-10000):  #  (NINF was producing NINF-NINF warnings)
     # Converts "self," describing an actual cut surface, to a corresponding "mold," describing the lowest
     # surface the drillbit's spherical head's tip can traverse. Both are PathGrids. The drillbit's head's
     # radius is ballrad. The lateral tolerance for path equality is ltol. Don't cut below floor. If no floor
-    # is needed, set floor to np.NINF.
+    # is needed, set floor to -10000.
   
     mxz = [None for _ in self.xz]
     for j,(yp,xzp) in enumerate(zip(self.y, self.xz)):
@@ -294,7 +304,7 @@ class PathGrid:
           for nx in range(1,altxz.shape[1]):
             segwid = altxz[0,nx]-altxz[0,nx-1]
             if segwid > ltol:
-              seglen = np.linalg.norm(altxz[:,nx]-altxz[:,nx-1])  #  NINF-NINF producing warnings
+              seglen = np.linalg.norm(altxz[:,nx]-altxz[:,nx-1])
               segslo = (altxz[1,nx]-altxz[1,nx-1])/segwid
               edgex = altxz[0,nx-1]-(altxz[1,nx]-altxz[1,nx-1])*xzrad/seglen
               edgez = altxz[1,nx-1]+(altxz[0,nx]-altxz[0,nx-1])*xzrad/seglen
@@ -306,7 +316,7 @@ class PathGrid:
   
   def moldToCast(self, ballrad, ltol):
     # Inverts the above function. Assumes no floor.
-    return -((-self).castToMold(ballrad,ltol,np.NINF))
+    return -((-self).castToMold(ballrad,ltol))
 
   def roundJoint(self,ballrad,ltol):
     # The idea is to minimally modify the PathGrid "self" so as to be tangible from above & below with a
@@ -322,139 +332,90 @@ class PathGrid:
     for (yp,xzp) in zip(self.y, self.xz):
       ax.plot(xzp[0,:], yp*np.ones(xzp.shape[1]), xzp[1,:], color, linewidth=1)
 
-  def pacePathGrid(self, shpaid, abssh, cude):
-    # This is probably obsolete now, but I won't remove it until I'm sure it's not useful.
-
-    # "Pace" a target PathGrid (self), by creating a ToolPath that works its way down to the target depth
-    # from an initial stockheight (described by shpaid---a PathGrid, or a scalar to indicate starting with a
-    # flat block), cutting no more than the prescribed cutting depth (cude) on each path. As close as
-    # possible to a constant cut depth is left for the final cut, with the idea that it will result in an
-    # evener finish. The "absolute stock height" (abssh) is a height at which rapid movement is always safe,
-    # used between passes.
-  
-    wath = shpaid - self  #  a PathGrid representing the waste depth
-    maxwaste = wath.maxoxy()
-    numcuts = max(0, int(np.ceil(maxwaste/cude)))
-    if numcuts < 1:
-      raise PathGridError("No cutting required in pacePathGrid.")
-    cutlevels = [maxwaste - cude*l for l in range(1,numcuts)] + [0]  #  includes target cut at end
-
-    # Here we want to build the ToolPath in a loop. Unfortunately (though understandably), iteratively
-    # appending to numpy arrays would create new copies at each iteration, and be laughably inefficient.
-    # But it's hard to predict how much memory to allocate for the arrays. Therefore, in this loop we'll
-    # build two lists: a list of single-cut paths, and a same-length list of safe heights for rapid motion
-    # between them. Then use compileToolPath to convert that to a ToolPath.
-    scpaths = []
-    safehts = [abssh]
-    steptar = shpaid
-    curpos = None  #  so it knows not to add a rapid move before first cut
-    for cule in cutlevels:
-      startOfLevel = True  #  so it knows to avoid at curheight rather than steptar
-      curheight = steptar  #  set current stock height to target height at previous step
-      steptar = shpaid - (wath - cule).pospar()
-      cutlist = steptar.whereBelow(curheight)  #  just the actual cutting needing doing
-
-      # Reverse cut list in the y direction if necessary:
-      if curpos != None and abs(curpos[1]-steptar.y[-1]) < abs(curpos[1]-steptar.y[0]):
-        cutlist.reverse()
-        stepy = reversed(self.y)
-      else:
-        stepy  = self.y
-
-      for (yp, cutp) in zip(stepy, cutlist):
-        if len(cutp):
-          if curpos != None:
-            if abs(curpos[0]-cutp[-1][0,-1]) < abs(curpos[0]-cutp[0][0,0]):
-              cutp = [np.fliplr(cu) for cu in reversed(cutp)]  #  do these cuts with decreasing x
-            if startOfLevel:
-              safehts.append(maxcrop(curheight, curpos, [cutp[0][0,0],yp]))
-              startOfLevel = False
-            else:
-              safehts.append(max(maxcrop(curheight,[curpos[0],yp], [cutp[0][0,0],yp]),
-                maxcrop(steptar,curpos, [cutp[0][0,0],yp])))
-          safehts += [maxcrop(curheight,[cutp[j-1][0,-1],yp],[cutp[j][0,0],yp]) for j in range(1,len(cutp))]
-          scpaths += [np.vstack((cu[0,:], yp*np.ones(cu.shape[1]), cu[1,:])) for cu in cutp]
-          curpos = [scpaths[-1][0,-1], yp]
-    return compileToolPath(scpaths, safehts)
-
-  def MultiToolPG(self, shpaid, abssh, toolSeq, regions=[lambda x,y:np.full(x.shape,True)]):
+  def MultiToolGreedy(self, shpaid, toolSeq):
     # This creates a sequence of ToolPaths (one per tool in the provided sequence of ball-end drill bits, of
     # presumably decreasing radius), each working its way down from an initial stockheight, in general via a
     # sequence of not-very-deep cuts. Probably in practice the toolSeq will have length 1 (a single bit) or
     # 2 (a rough cut followed by a fine cut).
     # Inputs:
-    #   self:    the target pathgrid
-    #   shpaid:  initial stock height [PathGrid or scalar]
-    #   abssh:   absolute safe height [scalar]
-    #   toolSeq: list of dictionaries defining (in cut order, coarse to fine):
-    #     bitrad:  RADIUS (NOT DIAMETER) of bit, assumed to be ball-nose
-    #     cude:    depth of wood it can remove in each pass
-    #     ds:      offset for this tool will be ds times self's offset
-    #   regions: if provided, an assumed exhaustive list of vectorised membership tests for [x,y]. On all
-    #     but the final of the fine cuts, these regions will be handled separately, in sequence. This
-    #     facilitates manual hints as to cut order. A slight overlap is fine.
+    #   self:        the target pathgrid
+    #   shpaid:      initial stock height [PathGrid or scalar]
+    #   toolSeq:     list of dictionaries defining (in cut order, coarse to fine):
+    #     bitrad:      RADIUS (NOT DIAMETER) of bit, assumed to be ball-nose
+    #     cude:        depth of wood it can remove in each pass
+    #     ds:          ('downsample') offset for this tool will be ds times self's offset
 
     # Most of the logic here deals with the first tool in the list. The rest are handled via recursion.
 
     # Calculate this tool's target centre depth & resulting stock depth:
-    # buffer = sum([tool['cude'] for tool in toolSeq[1:]])  #  minimum waste to leave for subsequent tools
-    buffer = 0.2*toolSeq[-1]['cude']  #  minimum waste to leave for the final fine cut; may need tweaking
+    # Minimum waste to leave for the final fine cut; may need tweaking:
+    buffer = 0.75*toolSeq[-1]['cude'] if len(toolSeq)>1 else 0
     ballrad = toolSeq[0]['bitrad']
-    target = (self+buffer).castToMold(ballrad, 0.2*ballrad, np.NINF
-      ).downsample(toolSeq[0]['ds'])  #  target for this tool
+    target = (self+buffer).castToMold(ballrad, 0.1*ballrad)  #  target mold for this tool
+    targetDS = target.downsample(toolSeq[0]['ds'])  #  downsampled for actual cutting
+    toolFinalSH = targetDS.upsample(self).moldToCast(ballrad,0.1*ballrad)
 
     # There's probably a better way to deal with this, but at this point we'll convert shpaid to a PathGrid
-    # if it's just a scalar:
+    # if it's just a scalar. Note shpaid remains fullsampled.
     if isinstance(shpaid, numbers.Number):
-      shpaid = PathGrid(target.y, [np.vstack((xzp[0,:],np.full(xzp.shape[1],shpaid))) for xzp in target.xz])
-    else:
-      shpaid = shpaid.castToMold(ballrad, 0.2*ballrad, np.NINF
-        ).downsample(toolSeq[0]['ds'])  #  adjusted for bit shape
+      shpaid = PathGrid(self.y, [np.vstack((xzp[0,:],np.full(xzp.shape[1],shpaid))) for xzp in self.xz])
+    shpaid = shpaid.castToMold(ballrad, 0.1*ballrad)  #  working in 'mold' view from now on.
+    shpaidDS = shpaid.downsample(toolSeq[0]['ds'])
 
     # Now we want to build a ToolPath in a loop, but shouldn't do that directly, for memory-handling
     # reasons. So we build two lists:
-    scpaths = []  #  a list of single-cut paths, and
-    safehts = []  #  a corresponding list of safe heights for rapid motion between them.
-    curpos = None
-    for reg in (regions if len(toolSeq)==1 else [lambda x,y:np.full(x.shape,True)]):
-      regtar = target.clipToRegion(reg)
-      regshe = shpaid.clipToRegion(reg)
-      steptar = regshe
-      # A PathGrid representing the waste depth in this region (excluding buffer, if finest tool):
-      wath = regshe-regtar
-      maxwaste = wath.maxoxy()  #  scalar max over X & Y
-      numcuts = max(0, int(np.ceil(maxwaste/toolSeq[0]['cude'])))
-      if numcuts > 0:
-        cutlevels = [maxwaste - toolSeq[0]['cude']*l for l in range(1,numcuts)]
-        if cutlevels[-1] > 0.05*toolSeq[0]['bitrad']: cutlevels.append(0)  #  the target cut at the end
-        for cule in cutlevels:
-          curheight = steptar  #  set current stock height to target height at previous step
-          steptar = regshe - (wath - cule).pospar()
-          (cuty,cutxz) = steptar.whereBelow(curheight)  #  just the actual cutting needing doing
-          (curpos,scpaths_appendix,safehts_appendix) = sequenceCuts(
-            curpos, abssh, curheight, steptar, cuty, cutxz)
-          scpaths += scpaths_appendix
-          safehts += safehts_appendix
-      
-    # If we're using the finest tool, there's 1 remaining cut to do, which should NOT be split into regions.
-    if len(toolSeq)==1:
-      # Append more cuts in scpaths & safehts:
-      target = self.castToMold(ballrad, 0.2*ballrad, np.NINF
-        ).downsample(toolSeq[0]['ds'])  #  target for this tool [note: ds should be 1, but just in case]
-      curheight = steptar  #  stock height remaining after previous step
-      (cuty,cutxz) = target.whereBelow(curheight)
-      (curpos, scpaths_appendix, safehts_appendix) = sequenceCuts(
-        curpos, abssh, curheight, target, cuty, cutxz)
-      scpaths += scpaths_appendix
-      safehts += safehts_appendix
+    scpaths = []  #  a list of paths to be joined end-to-end, and
+    taxes = []    #  a corresponding list of taxis modes (0 or 1)
+    curpos = np.zeros((3,1))  #  just used to determine where to go next
+    numcuts = int(np.ceil((shpaid-target).maxoxy()/toolSeq[0]['cude']))
+    if numcuts<1:
+      raise PathGridError("Wait, I'm confused. One tool's not cutting anything.")
+    cutlevels = toolSeq[0]['cude'] * np.flip(np.arange(numcuts))
+    PostSH = shpaidDS  #  effectively initialising PreSH [see 2 lines further]
+    for cule in cutlevels:
+      PreSH = PostSH
+      PostSH = (shpaidDS+0.001).min(targetDS+cule)  #  added micron to clarify where PostSH is below shpaid
+      cutxyz = PostSH.whereBelow(shpaidDS)  # segments needing cutting at this level
+      # breakpoint()
+      while len(cutxyz):
+        dists = np.row_stack([[np.sum((curpos-seg[:,0,None])**2), np.sum((curpos-seg[:,-1,None])**2)]
+          for seg in cutxyz])
+        # Now find location in this two column array of the minimum; pop the rowth el of cutxyz; rev if 2nd col:
+        locmin = np.unravel_index(dists.argmin(),dists.shape)  #  location of shortest (squared) distance
+        try:
+          nextpath = cutxyz.pop(locmin[0])  #  grab the closest path from the list
+        except:
+          breakpoint()
+        if locmin[1]: nextpath = np.fliplr(nextpath)  #  reverse it if the end is closer than the start
+
+        # Now we know where we're headed, but there may be stuff to avoid en route. Firstly, if it's close, let's
+        # see whether we can go there in a single straight line:
+        if dists[locmin] > 625 or PostSH.maxoseg(np.column_stack((curpos, nextpath[:,0]))) > 0:
+          # There are obstacles.
+          minZ = PreSH.maxoseg(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[0,0]])) + 2
+          # Rapidly rise to minZ, move x & y, then slowmo down to start of nextpath:
+          scpaths.append(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[minZ,minZ]]))
+          taxes.append(0)  #  rapid mode
+        scpaths.append(nextpath)
+        taxes.append(1)  #  feed mode
+        curpos = nextpath[:,-1,None]
+
+    # Now also need to return to origin:
+    taxes.append(0)
+    if PostSH.maxoseg(np.column_stack((curpos, np.zeros((3,1))))) > -2:
+      # There are obstacles.
+      minZ = PostSH.maxoseg(np.array([[curpos[0,0],0],[curpos[1,0],0],[0,0]])) + 2
+      scpaths.append(np.array([[curpos[0,0],0,0],[curpos[1,0],0,0],[minZ,minZ,0]]))
+    else:
+      scpaths.append(np.zeros((3,1)))
 
     # Return value, with recursive call if we aren't already looking at the finest tool:
-    TPList = [compileToolPath(scpaths,safehts)]
+    TPList = [compileToolPath(scpaths,taxes)]
     if len(toolSeq)>1:
       # 'Upsample'; determine current stock height from target depth:
-      newStockHeight = target.upsample(self).moldToCast(ballrad,0.2*ballrad)
+      newStockHeight = target.upsample(self).moldToCast(ballrad,0.1*ballrad)
       # Call MultiToolPG recursively for remaining tools:
-      TPList += self.MultiToolPG(newStockHeight, abssh, toolSeq[1:], regions=regions)
+      TPList += self.MultiToolGreedy(toolFinalSH, toolSeq[1:])
     return TPList
 
   def downsample(self, ds):
@@ -467,7 +428,8 @@ class PathGrid:
 
   def upsample(self, finer):
     # Return a finer PathGrid, every dsth row of which is from self. The new rows are at infinite height.
-    moldxz = [np.vstack((xzp[0,:],np.full(xzp.shape[1],np.PINF))) for xzp in finer.xz]
+    # (Actually I've changed every infinity to 10 metres to dodge some "inf-inf" warnings.)
+    moldxz = [np.vstack((xzp[0,:],np.full(xzp.shape[1],10000))) for xzp in finer.xz]
     for (yp,xzp) in zip(self.y, self.xz):
       yind = next(j for (j,ypf) in enumerate(finer.y) if ypf==yp)
       moldxz[yind] = xzp
@@ -494,43 +456,6 @@ class PathGrid:
 
     return PathGrid(np.array(newy), newxz)
 
-def sequenceCuts(curpos, abssh, curheight, steptar, cuty, cutxz):
-  # Slightly awkward, but I'm extracting this as a function since it's done twice in MultiToolPG.
-  # Plan the cuts described in cuty & cutxz, to be appended to MultiToolPG's scpaths and safehts.
-  # curpos is need to determine which order to do the cuts in, and curheight & steptar help to compute the
-  # safe movement heights between consecutive cuts.
-
-  # lists for return values:
-  safehts_appendix = []
-  scpaths_appendix = []
-
-  startOfLevel = True  #  so it knows to avoid at curheight rather than steptar
-
-  # Reverse cut list in the y direction if necessary:
-  if curpos != None and abs(curpos[1]-cuty[-1]) < abs(curpos[1]-cuty[0]):
-    cuty.reverse()
-    cutxz.reverse()
-      
-  # Now queue up everything in cutlist to be cut:
-  for (yp, cutp) in zip(cuty, cutxz):
-    if curpos == None:
-      safehts_appendix.append(abssh)
-    else:
-      if abs(curpos[0]-cutp[-1][0,-1]) < abs(curpos[0]-cutp[0][0,0]):
-        cutp = [np.fliplr(cu) for cu in reversed(cutp)]  #  do these cuts with decreasing x
-      if startOfLevel:
-        safehts_appendix.append(maxcrop(curheight, curpos, [cutp[0][0,0],yp]))
-        startOfLevel = False
-      else:
-        safehts_appendix.append(max(maxcrop(curheight,[curpos[0],yp], [cutp[0][0,0],yp]),
-          maxcrop(steptar,curpos, [cutp[0][0,0],yp])))
-    safehts_appendix += [maxcrop(curheight,[cutp[j-1][0,-1],yp],[cutp[j][0,0],yp])
-      for j in range(1,len(cutp))]
-    scpaths_appendix += [np.vstack((cu[0,:], yp*np.ones(cu.shape[1]), cu[1,:])) for cu in cutp]
-    curpos = [scpaths_appendix[-1][0,-1], yp]
-
-  return (curpos, scpaths_appendix, safehts_appendix)
-
 def addPLFs(a,b):
   # Inputs two lists of 2D numpy arrays of two rows each (x & z), increasing in x, describing each PLF
   # (piece-wise linear function).
@@ -538,6 +463,15 @@ def addPLFs(a,b):
   # Assumes a & b start & end at the same x values.
   x = np.sort(np.unique(np.concatenate((a[0,:],b[0,:]))))
   z = np.interp(x, a[0,:], a[1,:]) + np.interp(x, b[0,:], b[1,:])
+  return np.vstack([x,z])
+  
+def subtractPLFs(a,b):
+  # Inputs two lists of 2D numpy arrays of two rows each (x & z), increasing in x, describing each PLF
+  # (piece-wise linear function).
+  # Outputs another PLF, in the same format, being a-b.
+  # Assumes a & b start & end at the same x values.
+  x = np.sort(np.unique(np.concatenate((a[0,:],b[0,:]))))
+  z = np.interp(x, a[0,:], a[1,:]) - np.interp(x, b[0,:], b[1,:])
   return np.vstack([x,z])
   
 def pospar(plf):  #  "positive part"
@@ -551,26 +485,11 @@ def pospar(plf):  #  "positive part"
     list(((plf[0,cx]*plf[1,cx+1]-plf[0,cx+1]*plf[1,cx])/(plf[1,cx+1]-plf[1,cx]),0) for cx in csx) +
     [(np.array([[1],[0]])*plf[:,[0,-1]])[:, np.logical_not(px[[0,-1]])]]))
   return nodes[:,np.argsort(nodes[0,:])]
-  
-# This was a method of PathGrid, but I want it to work right if the 'paid' argument is just a constant, too.
-def maxcrop(paid, p0, p1):
-  # Returns the greatest height in paid within the closed region [x[0],x[1]]*[y[0],y[1]]*[-inf,inf].
 
-  if isinstance(paid, PathGrid):
-    # The rectangle is delimited axially by the two points, which can be input as any two opposite corners.
-    x = [min(p0[0],p1[0]),max(p0[0],p1[0])]
-    y = [min(p0[1],p1[1]),max(p0[1],p1[1])]
-  
-    retval = np.NINF
-    for (yp,xzp) in zip(paid.y,paid.xz):
-      if yp>=y[0] and yp<=y[1]:
-        for xe in x:  #  each endpoint, i.e., x[0] & then x[1]
-          if xzp[0,0]<xe and xzp[0,-1]>xe:
-            retval = max(retval, np.interp(xe, xzp[0,:], xzp[1,:]))
-        retval = np.amax(xzp[1,np.logical_and(xzp[0,:]>=x[0], xzp[0,:]<=x[1])], initial=retval)
-  else:
-    retval = paid  #  which is in this case hopefully just a numeric value
-  return retval
+def minPLFs(a,b):  #  pointwise minimum of two piecewise linear functions
+  # Inputs two piecewise linear functions (described by 2-row Numpy arrays with first row non-descending).
+  # Outputs min(a,b) in the same format & over the same (assumed common) range.
+  return subtractPLFs(a, pospar(subtractPLFs(a,b)))
 
 ############################################################################################################
 

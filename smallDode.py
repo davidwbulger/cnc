@@ -9,19 +9,24 @@ import matplotlib.pyplot as plt
 rf = 50  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 
-ballrad = 1 - 0.05  #  [hack to leave glue gap]  #  radius of drillbit
-cutdepth = 2
-approxoffset = ballrad/4  #  gap between adjacent toolpaths
-numTeeth = 12  #  number of teeth per joined edge (on each piece)
+glueGapHack = 0.03
+gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
+approxToothWidth = 1.5
 
-edgePropJoined = 0.85  #  proportion of edge used for finger joint
+edgePropJoined = 0.9  #  max proportion of edge used for finger joint
 mitreMargin = 1  #  vertically, for simplicity
 
-boolPlot = False
+boolPlot = True
 
 #### ##    CALCULATED VALUES:    ## #####
 
+ballrad = gcodeToolSeq[-1]['bitrad']
+maxoffset = ballrad/4  #  gap between adjacent toolpaths
+offset = 2*ballrad/np.ceil(2*ballrad/maxoffset)
+toothWidth = (offset/2)*np.ceil(approxToothWidth*2/offset)
 edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
+numTeeth = np.floor(edgeHalfLen*edgePropJoined/toothWidth
+
 ird = rf*np.sqrt((7+3*np.sqrt(5))/8)  # solid inradius to exterior face
 irf = rf*np.cos(np.pi/5)  #  planar inradius to exterior edge
 v = 0.5*(th-mitreMargin)*(1-(irf/ird)**2)
@@ -31,8 +36,9 @@ abssh = th+ballrad+5
 
 #### ##    CREATE THE TOOLPATH FOR THE EDGES WITH TEETH:    ## #####
 
-toothWidth = edgeHalfLen*edgePropJoined/numTeeth
-cutsPerTooth = int(toothWidth/approxoffset + 0.95)  #  ensure offset is at least nearly as small as it should
+## -------------------------------------------------------------------------------------------------------
+
+cutsPerTooth = int(toothWidth/offset + 0.95)  #  ensure offset is at least nearly as small as it should
 offset = toothWidth/cutsPerTooth  #  update offset for integer number of cuts per tooth
 halfNumCuts = int((edgeHalfLen-offset/2)/offset + 0.95)
 y = np.linspace((0.5-halfNumCuts)*offset, (halfNumCuts-0.5)*offset, 2*halfNumCuts)
