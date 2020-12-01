@@ -60,10 +60,10 @@ class ToolPath:
   def __init__(self, nodes, taxis):
     if nodes[:,[0,-1]].any():
       raise ToolPathError("First and last node must be the origin.")
-    if taxis[0,0]!=0 or taxis[0,-1]!=nodes.shape[1]-1 or np.any(np.diff(taxis[0,:])<1):
+    if taxis[0,0]!=0 or taxis[0,-1]>=nodes.shape[1]-1 or np.any(np.diff(taxis[0,:])<1):
       breakpoint()
       raise ToolPathError(
-        "Taxis change nodes (first row of taxis) must run increasingly from first to last node index.")
+        "Taxis change nodes (first row of taxis) must increase from first node index, stopping before the last.")
     if not all(np.logical_or(taxis[1,:]==0, taxis[1,:]==1)):
       raise ToolPathError("Taxis changes (second row of taxis) must be binary.")
     self.nodes = nodes
@@ -120,7 +120,8 @@ class ToolPath:
         fidout.write("\n")
 
     ## FOOTER:
-    fidout.write("G00 Z5.\nM30\n%%\n" % self.rahe[0])  #  retract 5mm
+    # fidout.write("G00 Z5.\nM30\n%%\n")  #  retract 5mm
+    fidout.write("M30\n%%\n")
     fidout.close()
 
   def plot(self, ax, color='black', linewidth=1):
