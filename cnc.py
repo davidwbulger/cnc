@@ -61,7 +61,6 @@ class ToolPath:
     if nodes[:,[0,-1]].any():
       raise ToolPathError("First and last node must be the origin.")
     if taxis[0,0]!=0 or taxis[0,-1]>=nodes.shape[1]-1 or np.any(np.diff(taxis[0,:])<1):
-      breakpoint()
       raise ToolPathError(
         "Taxis change nodes (first row of taxis) must increase from first node index, stopping before the last.")
     if not all(np.logical_or(taxis[1,:]==0, taxis[1,:]==1)):
@@ -91,7 +90,7 @@ class ToolPath:
     # point manually jogged to.
   
     # CONSTANTS:
-    atol = 0.01  #  10 microns; well below machine precision
+    atol = 0.02  #  20 microns; well below machine precision
     coordnames = "XYZ"
   
     progname = (os.path.splitext(fname)[0]+"xxxxx")[:5].upper()
@@ -164,7 +163,7 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
     np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
   nodes = np.hstack((nodes, np.matmul(nodes[:,-1,None],np.array([[1,0]]))))
   nodes[2,-2:0] = sht
-  #  print(nodes)  #  debugginh
+  #  print(nodes)  #  debugging
   if swapped:
     nodes = nodes[[1,0,2],:]
   ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([sht])).PathToGCode(feedrate, fname)
@@ -208,13 +207,20 @@ class PathGrid:
   def maxoseg(self, segment):
     # returns scalar maximum z height over the segment from segment[:,0] to segment[:,1], interpolated
     if np.diff(segment[1,:]):
-      try:
-       return max([np.interp(np.interp(yp,segment[1,:],segment[0,:]),xzp[0,:],xzp[1,:])  #  self's hgt at intersec
-         - np.interp(yp,segment[1,:],segment[2,:])  #  segment's height at intersection
-         for (yp,xzp) in zip(self.y,self.xz) if yp>=min(segment[1,:]) and yp<=max(segment[1,:])])
-      except:
-       breakpoint()
-    else:
+      segrid = np.linspace(segment[:,0], segment[:,1], 1000, axis=1)
+      retval = np.NINF
+      for segpt in segrid.T:
+        yp = np.max((self.y[0],np.min((self.y[-1],segpt[1]))))
+        yk = np.argwhere(yp==self.y)
+        if len(yk):
+          retval = np.max((retval, np.interp(segpt[0], self.xz[yk[0,0]][0,:], self.xz[yk[0,0]][1,:])-segpt[2]))
+        else:
+          yk = np.sum(self.y<yp)  #  so segpt appears between rows yk-1 & yk
+          zk = np.interp(segpt[0], self.xz[yk-1][0,:], self.xz[yk-1][1,:])
+          zK = np.interp(segpt[0], self.xz[yk][0,:], self.xz[yk][1,:])
+          retval = np.max((retval, np.interp(yp, self.y[yk-1:yk+1], [zk,zK])-segpt[2]))
+      return retval
+    else:  #  this branch probably isn't strictly necessary, but this is a common case & should be quicker
       xzp = next(xzp for (yp,xzp) in zip(self.y,self.xz) if yp==segment[1,0])  #  assume existence & uniqueness
       # Find x values of nodes within segment and endpoint of segment:
       xChek=np.hstack((xzp[0,np.logical_and(xzp[0,:]>min(segment[0,:]),xzp[0,:]<max(segment[0,:]))],segment[0,:]))
@@ -352,21 +358,24 @@ class PathGrid:
     # Minimum waste to leave for the final fine cut; may need tweaking:
     buffer = 0.75*toolSeq[-1]['cude'] if len(toolSeq)>1 else 0
     ballrad = toolSeq[0]['bitrad']
-    target = (self+buffer).castToMold(ballrad, 0.1*ballrad)  #  target mold for this tool
+    target = (self+buffer).castToMold(ballrad, 0.02*ballrad)  #  target mold for this tool
     targetDS = target.downsample(toolSeq[0]['ds'])  #  downsampled for actual cutting
-    toolFinalSH = targetDS.upsample(self).moldToCast(ballrad,0.1*ballrad)
+    toolFinalSH = targetDS.upsample(self).moldToCast(ballrad,0.02*ballrad)
 
     # There's probably a better way to deal with this, but at this point we'll convert shpaid to a PathGrid
     # if it's just a scalar. Note shpaid remains fullsampled.
     if isinstance(shpaid, numbers.Number):
       shpaid = PathGrid(self.y, [np.vstack((xzp[0,:],np.full(xzp.shape[1],shpaid))) for xzp in self.xz])
-    shpaid = shpaid.castToMold(ballrad, 0.1*ballrad)  #  working in 'mold' view from now on.
+    shpaid = shpaid.castToMold(ballrad, 0.02*ballrad)  #  working in 'mold' view from now on.
     shpaidDS = shpaid.downsample(toolSeq[0]['ds'])
 
     # Now we want to build a ToolPath in a loop, but shouldn't do that directly, for memory-handling
     # reasons. So we build two lists:
     scpaths = []  #  a list of paths to be joined end-to-end, and
     taxes = []    #  a corresponding list of taxis modes (0 or 1)
+    # Note that we travel at speed taxes[k] from scpaths[j-1][:,-1] to scpath[j][:,0] and on to scpaths[j][:,-1]
+    # (with the origin in place of scpaths[j-1][:,-1] when j==0).
+
     curpos = np.zeros((3,1))  #  just used to determine where to go next
     numcuts = int(np.ceil((shpaid-target).maxoxy()/toolSeq[0]['cude']))
     if numcuts<1:
@@ -377,16 +386,12 @@ class PathGrid:
       PreSH = PostSH
       PostSH = (shpaidDS+0.001).min(targetDS+cule)  #  added micron to clarify where PostSH is below shpaid
       cutxyz = PostSH.whereBelow(shpaidDS)  # segments needing cutting at this level
-      # breakpoint()
       while len(cutxyz):
         dists = np.row_stack([[np.sum((curpos-seg[:,0,None])**2), np.sum((curpos-seg[:,-1,None])**2)]
           for seg in cutxyz])
         # Now find location in this two column array of the minimum; pop the rowth el of cutxyz; rev if 2nd col:
         locmin = np.unravel_index(dists.argmin(),dists.shape)  #  location of shortest (squared) distance
-        try:
-          nextpath = cutxyz.pop(locmin[0])  #  grab the closest path from the list
-        except:
-          breakpoint()
+        nextpath = cutxyz.pop(locmin[0])  #  grab the closest path from the list
         if locmin[1]: nextpath = np.fliplr(nextpath)  #  reverse it if the end is closer than the start
 
         # Now we know where we're headed, but there may be stuff to avoid en route. Firstly, if it's close, let's
@@ -414,7 +419,7 @@ class PathGrid:
     TPList = [compileToolPath(scpaths,taxes)]
     if len(toolSeq)>1:
       # 'Upsample'; determine current stock height from target depth:
-      newStockHeight = target.upsample(self).moldToCast(ballrad,0.1*ballrad)
+      newStockHeight = target.upsample(self).moldToCast(ballrad,0.02*ballrad)
       # Call MultiToolPG recursively for remaining tools:
       TPList += self.MultiToolGreedy(toolFinalSH, toolSeq[1:])
     return TPList
