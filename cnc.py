@@ -11,9 +11,9 @@ import numbers
 #import warnings
 #warnings.filterwarnings("error")
 
-############################################################################################################
-####    DEFINE CLASSES:    #################################################################################
-############################################################################################################
+##################################################################################################################
+####    DEFINE CLASSES:    #######################################################################################
+##################################################################################################################
 
 class polyTri:
   def __init__(self,fname):
@@ -48,7 +48,7 @@ class polyTri:
   def __str__(self):
     return(self.facets.__str__())
 
-############################################################################################################
+##################################################################################################################
 
 class ToolPath:
   # Class to represent a sequence of tool motions.
@@ -110,7 +110,7 @@ class ToolPath:
     for j in range(self.taxis.shape[1]-1):
       # taxis mode is taxis[1,j]
       # sequence of nodes whither to move is nodes[:,taxis[0,j]+1:taxis[0,j+1]+1]
-      fidout.write(f"G0{self.taxis[1,j]} ")  #  set motion mode (cutting or rapid)
+      fidout.write(f"G{self.taxis[1,j]} ")  #  set motion mode (cutting or rapid)
       for newpos in self.nodes[:,self.taxis[0,j]+1:self.taxis[0,j+1]+1].T: 
         fidout.write("X%.2f Y%.2f Z%.2f" % tuple(newpos))
         if self.taxis[1,j] and not setfeedrate:
@@ -119,7 +119,7 @@ class ToolPath:
         fidout.write("\n")
 
     ## FOOTER:
-    # fidout.write("G00 Z5.\nM30\n%%\n")  #  retract 5mm
+    # fidout.write("G0 Z5.\nM30\n%%\n")  #  retract 5mm
     fidout.write("M30\n%%\n")
     fidout.close()
 
@@ -132,6 +132,8 @@ class ToolPath:
 def compileToolPath(paths, taxes):
   # Combine compatible lists of 3D paths and heights into a ToolPath object.
   # Each starts and stops from the origin (so they should be prepared individually as fairly large operations)
+  # Note that we travel at speed taxes[j] from scpaths[j-1][:,-1] to scpath[j][:,0] and on to scpaths[j][:,-1]
+  # (with the origin in place of scpaths[j-1][:,-1] when j==0).
   nodes = np.hstack([np.zeros((3,1))]+paths)
   cumpathlengths = np.cumsum([path.shape[1] for path in paths])
   taxis = np.row_stack((np.hstack((0,cumpathlengths[:-1])),taxes))
@@ -168,7 +170,7 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
     nodes = nodes[[1,0,2],:]
   ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([sht])).PathToGCode(feedrate, fname)
 
-############################################################################################################
+##################################################################################################################
 
 class PathGrid:
   # A PathGrid is a system of paths, each of constant y, with y increasing. Within each path, z varies as x
@@ -204,27 +206,54 @@ class PathGrid:
     # returns the scalar maximum of z over x & y
     return max([max(xzp[1,:]) for xzp in self.xz])
 
+  # Works well I think, but too slowly:
+  # def maxoseg(self, segment):
+  #   # returns scalar maximum z height over the segment from segment[:,0] to segment[:,1], interpolated
+  #   # This is now quite slow. I should consider how to accelerate it.
+  #   if np.diff(segment[1,:]):
+  #     segrid = np.linspace(segment[:,0], segment[:,1], 1000, axis=1)
+  #     retval = np.NINF
+  #     for segpt in segrid.T:
+  #       yp = np.max((self.y[0],np.min((self.y[-1],segpt[1]))))
+  #       yk = np.argwhere(yp==self.y)
+  #       if len(yk):
+  #         retval = np.max((retval, np.interp(segpt[0], self.xz[yk[0,0]][0,:], self.xz[yk[0,0]][1,:])-segpt[2]))
+  #       else:
+  #         yk = np.sum(self.y<yp)  #  so segpt appears between rows yk-1 & yk
+  #         zk = np.interp(segpt[0], self.xz[yk-1][0,:], self.xz[yk-1][1,:])
+  #         zK = np.interp(segpt[0], self.xz[yk][0,:], self.xz[yk][1,:])
+  #         retval = np.max((retval, np.interp(yp, self.y[yk-1:yk+1], [zk,zK])-segpt[2]))
+  #     return retval
+  #   else:  #  this branch probably isn't strictly necessary, but this is a common case & should be quicker
+  #     xzp = next(xzp for (yp,xzp) in zip(self.y,self.xz) if yp==segment[1,0])  #  assume existence & uniqueness
+  #     # Find x values of nodes within segment and endpoint of segment:
+  #     xCk=np.hstack((xzp[0,np.logical_and(xzp[0,:]>min(segment[0,:]),xzp[0,:]<max(segment[0,:]))],segment[0,:]))
+  #     return np.max(np.interp(xCk,xzp[0,:],xzp[1,:])-np.interp(xCk,segment[0,:],segment[2,:]))
+
   def maxoseg(self, segment):
-    # returns scalar maximum z height over the segment from segment[:,0] to segment[:,1], interpolated
-    if np.diff(segment[1,:]):
-      segrid = np.linspace(segment[:,0], segment[:,1], 1000, axis=1)
-      retval = np.NINF
-      for segpt in segrid.T:
-        yp = np.max((self.y[0],np.min((self.y[-1],segpt[1]))))
-        yk = np.argwhere(yp==self.y)
-        if len(yk):
-          retval = np.max((retval, np.interp(segpt[0], self.xz[yk[0,0]][0,:], self.xz[yk[0,0]][1,:])-segpt[2]))
-        else:
-          yk = np.sum(self.y<yp)  #  so segpt appears between rows yk-1 & yk
-          zk = np.interp(segpt[0], self.xz[yk-1][0,:], self.xz[yk-1][1,:])
-          zK = np.interp(segpt[0], self.xz[yk][0,:], self.xz[yk][1,:])
-          retval = np.max((retval, np.interp(yp, self.y[yk-1:yk+1], [zk,zK])-segpt[2]))
-      return retval
-    else:  #  this branch probably isn't strictly necessary, but this is a common case & should be quicker
-      xzp = next(xzp for (yp,xzp) in zip(self.y,self.xz) if yp==segment[1,0])  #  assume existence & uniqueness
+    # returns an upper bound for the scalar maximum z height of self (a PathGrid) over the segment from
+    # segment[:,0] to segment[:,1].
+    # segment[1,:] = np.maximum(self.y[0], np.minimum(self.y[-1], segment[1,:]))
+    if (segment[1,:]<self.y[0]).any()  or  (segment[1,:]>self.y[-1]).any():
+      # raise PathGridError("In maxoseg(PG,seg), seg's Y range exceeds PG's, so, ah ... I mean ...")
+      return 2  #  not ideal
+    yk = np.sum(self.y<=np.min(segment[1,:])) - 1  #  index of lowest relevant y value in PathGrid
+    yK = len(self.y) - np.sum(self.y>=np.max(segment[1,:]))  #  index of highest relevant y value in PathGrid
+    if yk==yK:  #  this branch probably isn't strictly necessary, but this is a common case & should be quicker
+      xzp = self.xz[yk]
       # Find x values of nodes within segment and endpoint of segment:
       xChek=np.hstack((xzp[0,np.logical_and(xzp[0,:]>min(segment[0,:]),xzp[0,:]<max(segment[0,:]))],segment[0,:]))
       return np.max(np.interp(xChek,xzp[0,:],xzp[1,:])-np.interp(xChek,segment[0,:],segment[2,:]))
+    tiltxz = [xzp - np.interp(yp,segment[1,:],segment[2,:]) for (yp,xzp) in zip(self.y, self.xz)]
+    retval = np.NINF
+    xcrosses = segment[0,0] + (segment[0,1]-segment[0,0])/(segment[1,1]-segment[1,0]) * (self.y-segment[1,0])
+    for k in range(yk,yK):
+      minx = max(np.min(segment[0,:]),np.min(xcrosses[k:k+2]))
+      maxx = min(np.max(segment[0,:]),np.max(xcrosses[k:k+2]))
+      for xzp in tiltxz[k:k+2]:
+        xChek=np.hstack((xzp[0,np.logical_and(xzp[0,:]>minx,xzp[0,:]<maxx)],segment[0,:]))
+        retval = max(retval,np.max(np.interp(xChek,xzp[0,:],xzp[1,:])))
+    return retval
 
   def pospar(self):
     return PathGrid(self.y, [pospar(xzp) for xzp in self.xz])
@@ -373,7 +402,7 @@ class PathGrid:
     # reasons. So we build two lists:
     scpaths = []  #  a list of paths to be joined end-to-end, and
     taxes = []    #  a corresponding list of taxis modes (0 or 1)
-    # Note that we travel at speed taxes[k] from scpaths[j-1][:,-1] to scpath[j][:,0] and on to scpaths[j][:,-1]
+    # Note that we travel at speed taxes[j] from scpaths[j-1][:,-1] to scpath[j][:,0] and on to scpaths[j][:,-1]
     # (with the origin in place of scpaths[j-1][:,-1] when j==0).
 
     curpos = np.zeros((3,1))  #  just used to determine where to go next
@@ -497,7 +526,7 @@ def minPLFs(a,b):  #  pointwise minimum of two piecewise linear functions
   # Outputs min(a,b) in the same format & over the same (assumed common) range.
   return subtractPLFs(a, pospar(subtractPLFs(a,b)))
 
-############################################################################################################
+##################################################################################################################
 
 class Error(Exception):  #  Base class for exceptions in this module.
   pass
@@ -514,9 +543,9 @@ class ToolPathError(Error):  #  Exception raised for errors in the input.
   def __init__(self, message):
     self.message = message
 
-############################################################################################################
-####    DEFINE UTILITIES:    ###############################################################################
-############################################################################################################
+##################################################################################################################
+####    DEFINE UTILITIES:    #####################################################################################
+##################################################################################################################
 
 # Affine transformation matrices ("ATMs") should probably be a class ... but that seems like a lot of
 # reinventing, and also I may not actually need much functionality.
@@ -543,7 +572,7 @@ def hackaspect(ax):
   ax.plot(xl, [yl[0],yl[0]], [zl[0],zl[0]], 'white')
   ax.plot(xl, [yl[1],yl[1]], [zl[1],zl[1]], 'white')
 
-############################################################################################################
+##################################################################################################################
 # THE FUNCTIONS meanroundingup & fitPWL ARE ABOUT EFFICIENTLY TRACING A PATH WITH LINE SEGMENTS:
 
 def meanroundingup(a,b):

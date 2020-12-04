@@ -9,10 +9,10 @@ import matplotlib.animation as animation
 ##################################################################################################################
 # PARAMETERS:
 
-initSeed = 2
+initSeed = 1  #  2
 action_animate = False
-action_gcode = True
-gcodeFrame = 146
+action_gcode = not action_animate
+gcodeFrame = 36  #  146
 gcodeToolSeq = [{'bitrad':1.5,'cude':3,'ds':3},{'bitrad':0.5,'cude':0.7,'ds':1}]
 transpose = False  #  Rotate ellipse after construction so that cuts are the short way
 prain = 0.05  #  proportion of frames with a raindrop
@@ -23,7 +23,7 @@ numFrames = 200
 dropsize = 50*gridres**1.5
 dropradius = 0.6*gridres**0.25
 
-r = 27  #  semiminor radius  
+r = 20  #  semiminor radius  
 R = r*(1+np.sqrt(5))/2  #  semimajor radius [golden ratio]
 maxdepth = 7.5
 mindepth = 0.5
@@ -238,6 +238,8 @@ if action_animate:
 # WRITE THE GCODE:
 
 if action_gcode:
+  xgrid += R
+  ygrid += r
   # Construct PathGrid:
   union = np.logical_or(interior, ghost)
   zproc = zdeck[:,:,gcodeFrame]
