@@ -9,11 +9,11 @@ import matplotlib.animation as animation
 ##################################################################################################################
 # PARAMETERS:
 
-initSeed = 1  #  2
+initSeed = 1
 action_animate = False
 action_gcode = not action_animate
-gcodeFrame = 36  #  146
-gcodeToolSeq = [{'bitrad':1.5,'cude':3,'ds':3},{'bitrad':0.5,'cude':0.7,'ds':1}]
+gcodeFrame = 159
+gcodeToolSeq = [{'bitrad':3,'cude':3,'ds':3},{'bitrad':1,'cude':1,'ds':1}]
 transpose = False  #  Rotate ellipse after construction so that cuts are the short way
 prain = 0.05  #  proportion of frames with a raindrop
 gridres = 0.5 # 0.75  #  offset should be a multiple of this
@@ -23,16 +23,10 @@ numFrames = 200
 dropsize = 50*gridres**1.5
 dropradius = 0.6*gridres**0.25
 
-r = 20  #  semiminor radius  
+r = 30  #  semiminor radius  
 R = r*(1+np.sqrt(5))/2  #  semimajor radius [golden ratio]
 maxdepth = 7.5
 mindepth = 0.5
-
-# THIS ISN'T QUITE SO SIMPLE. SHOULD ROUGH CUT WITH LARGER BIT BEFORE FINAL CUT(S?) WITH SMALLER. (OTHERWISE IT'S
-# 20 CUTS!)
-dpc = 0.5  #  depth per cut
-frate = 150
-offset = 4  #  0.7
 
 ##################################################################################################################
 # FUNCTIONS NEEDED:
