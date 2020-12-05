@@ -107,11 +107,12 @@ class ToolPath:
   
     ## PATHS:
     setfeedrate = False  #  it's not set yet. The machine should be told the rate on the 1st G01.
-    for j in range(self.taxis.shape[1]-1):
+    for j in range(self.taxis.shape[1]):
       # taxis mode is taxis[1,j]
       # sequence of nodes whither to move is nodes[:,taxis[0,j]+1:taxis[0,j+1]+1]
       fidout.write(f"G{self.taxis[1,j]} ")  #  set motion mode (cutting or rapid)
-      for newpos in self.nodes[:,self.taxis[0,j]+1:self.taxis[0,j+1]+1].T: 
+      for newpos in self.nodes[:,self.taxis[0,j]+1:(self.taxis[0,j+1]+1 if j<self.taxis.shape[1]-1 else
+        self.nodes.shape[1])].T: 
         fidout.write("X%.2f Y%.2f Z%.2f" % tuple(newpos))
         if self.taxis[1,j] and not setfeedrate:
           fidout.write(" F%d" % feedrate)
