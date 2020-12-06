@@ -1,4 +1,4 @@
-# create g-code for test run
+# create g-code to level a rectangular region
 
 import cnc
 import sys
