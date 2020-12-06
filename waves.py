@@ -9,24 +9,35 @@ import matplotlib.animation as animation
 ##################################################################################################################
 # PARAMETERS:
 
-initSeed = 1
+phi = (1+np.sqrt(5))/2
+
+# First decent one (in pine):
+# initSeed = 1
+# gcodeFrame = 159
+# r = 30  #  semiminor radius  
+# R = r*phi  #  semimajor radius [golden ratio]
+# maxdepth = 7.5
+# mindepth = 0.5
+
+initSeed = 22
+gcodeFrame = 59
+r = 27  #  semiminor radius  
+R = r*phi**3
+maxdepth = 5
+mindepth = 0.3
+
 action_animate = False
+
 action_gcode = not action_animate
-gcodeFrame = 159
-gcodeToolSeq = [{'bitrad':3,'cude':3,'ds':3},{'bitrad':1,'cude':1,'ds':1}]
+gcodeToolSeq = [{'bitrad':3,'cude':4,'ds':3},{'bitrad':1,'cude':1,'ds':1}]
 transpose = False  #  Rotate ellipse after construction so that cuts are the short way
 prain = 0.05  #  proportion of frames with a raindrop
 gridres = 0.5 # 0.75  #  offset should be a multiple of this
 damping = 0.03*gridres
 wavespeed = 0.23  #  actually "stability parameter s" = c^2(delta t)^2/(delta x)^2 from Grigoryan
-numFrames = 200
+numFrames = 120
 dropsize = 50*gridres**1.5
 dropradius = 0.6*gridres**0.25
-
-r = 30  #  semiminor radius  
-R = r*(1+np.sqrt(5))/2  #  semimajor radius [golden ratio]
-maxdepth = 7.5
-mindepth = 0.5
 
 ##################################################################################################################
 # FUNCTIONS NEEDED:
