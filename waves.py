@@ -19,25 +19,34 @@ phi = (1+np.sqrt(5))/2
 # maxdepth = 7.5
 # mindepth = 0.5
 
-initSeed = 22
-gcodeFrame = 59
+initSeed = 57
+np.random.seed(initSeed)
+gcodeFrame = 54
 r = 27  #  semiminor radius  
-R = r*phi**3
-maxdepth = 5
-mindepth = 0.3
+R = 111
+maxdepth = 13
+mindepth = 0.5
+action_animate = True
 
-action_animate = False
+# initSeed = 1
+# gcodeFrame = 104
+# r = 20  #  semiminor radius  
+# R = 30
+# maxdepth = 13
+# mindepth = 0.5
+# action_animate = False
 
 action_gcode = not action_animate
-gcodeToolSeq = [{'bitrad':3,'cude':4,'ds':3},{'bitrad':1,'cude':1,'ds':1}]
+gcodeToolSeq = [{'bitrad':3,'cude':2,'ds':2},{'bitrad':1,'cude':1,'ds':1}]
 transpose = False  #  Rotate ellipse after construction so that cuts are the short way
-prain = 0.05  #  proportion of frames with a raindrop
-gridres = 0.5 # 0.75  #  offset should be a multiple of this
-damping = 0.03*gridres
-wavespeed = 0.23  #  actually "stability parameter s" = c^2(delta t)^2/(delta x)^2 from Grigoryan
+prain = 0.06  #  proportion of frames with a raindrop
+prainDecay = 0.95  #  multiplier per frame of raindrop probability
+gridres = 1 # 0.5 # 0.75  #  offset should be a multiple of this
+damping = 0.02*gridres
+wavespeed = 0.18  #  actually "stability parameter s" = c^2(delta t)^2/(delta x)^2 from Grigoryan
 numFrames = 120
 dropsize = 50*gridres**1.5
-dropradius = 0.6*gridres**0.25
+dropradius = 1.0*gridres**0.25
 
 ##################################################################################################################
 # FUNCTIONS NEEDED:
@@ -193,7 +202,6 @@ zgrid = oneDrop(zgrid)  #  hit the pool with one random raindrop
 
 # Calculate the deck of zgrids:
 zdeck = np.zeros(zgrid.shape + (numFrames,))
-np.random.seed(initSeed)
 for fnum in range(numFrames):
   # Calculate reflected heights for ghost points:
   zgrid *= interior
@@ -208,8 +216,13 @@ for fnum in range(numFrames):
       0.5*(np.roll(lag1z,(1,1),(0,1)) + np.roll(lag1z,(-1,1),(0,1)) + np.roll(lag1z,(1,-1),(0,1)) +
       np.roll(lag1z,(-1,-1),(0,1))))) / (1+damping)
   # Now maybe a raindrop:
-  if np.random.rand() < prain: zgrid = oneDrop(zgrid)
+  if np.random.rand() < prain*prainDecay**fnum: zgrid = oneDrop(zgrid)
   zdeck[:,:,fnum] = zgrid.copy()
+zproc = zdeck[:,:,gcodeFrame]
+zmax = np.max(zproc[interior])
+zmin = np.min(zproc[interior])
+zdeck = -maxdepth + (maxdepth-mindepth)/(zmax-zmin)*(zdeck-zmin)
+zproc = ghost*2 + interior*zdeck[:,:,gcodeFrame]  #  2>0 prevents cutting
 
 ##################################################################################################################
 # SET UP THE ANIMATION:
@@ -247,11 +260,7 @@ if action_gcode:
   ygrid += r
   # Construct PathGrid:
   union = np.logical_or(interior, ghost)
-  zproc = zdeck[:,:,gcodeFrame]
-  zmax = np.max(zproc[interior])
-  zmin = np.min(zproc[interior])
   # DEBUGGING: print([zmin, zmax])
-  zproc = ghost*2 + interior*(-maxdepth + (maxdepth-mindepth)/(zmax-zmin)*(zproc-zmin))  #  2>0 prevents cutting
   # DEBUGGING: zmax = np.max(zproc[interior])
   # DEBUGGING: zmin = np.min(zproc[interior])
   # DEBUGGING: print([zmin, zmax])

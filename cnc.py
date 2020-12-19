@@ -16,37 +16,72 @@ import numbers
 ##################################################################################################################
 
 class polyTri:
-  def __init__(self,fname):
-    # Read fname (an STL file) to build a polyTri structure
-    fid = open(fname, "rb")
-    if fid.read(5) == b"solid":
-      # Read an ASCII format STL file:
-      fid.close()
-      fid = open(fname, "r")
-      line = fid.readline()
-      triList = []
-      while line:
-        if re.match("^\s*outer loop", line):
-          triList.append(np.vstack([
-            np.fromstring(re.sub("\s*vertex\s*","",fid.readline()),dtype=float,sep=' ') for ix in [0,1,2]]))
+  # Note that self.facets[i,j,k] is the kth coord of the jth vertex of the ith triangle.
+  def __init__(self,fname=None,facets=None):
+    if fname != None:
+      # Read fname (an STL file) to build a polyTri structure
+      fid = open(fname, "rb")
+      if fid.read(5) == b"solid":
+        # Read an ASCII format STL file:
+        fid.close()
+        fid = open(fname, "r")
         line = fid.readline()
-      fid.close()
-      self.facets = np.array(triList,ndmin=3)
-    else:
-      # Read a binary format STL file:
-      fid.read(75)  #  discard remainder of header
-      numTri = struct.unpack('<I', fid.read(4))[0]  #  little-endian UINT32
-      facets = np.zeros((numTri,3,3))
-      for tx in range(numTri):
-        fid.read(12)  #  discard normal vector
-        facets[tx,:,:] = np.array([[struct.unpack('<f', fid.read(4))[0]
-          for cx in range(3)] for rx in range(3)]) 
-        fid.read(2)  #  discard 'attribute byte count'
-      fid.close()
+        triList = []
+        while line:
+          if re.match("^\s*outer loop", line):
+            triList.append(np.vstack([
+              np.fromstring(re.sub("\s*vertex\s*","",fid.readline()),dtype=float,sep=' ') for ix in [0,1,2]]))
+          line = fid.readline()
+        fid.close()
+        self.facets = np.array(triList,ndmin=3)
+      else:
+        # Read a binary format STL file:
+        fid.read(75)  #  discard remainder of header
+        numTri = struct.unpack('<I', fid.read(4))[0]  #  little-endian UINT32
+        facets = np.zeros((numTri,3,3))
+        for tx in range(numTri):
+          fid.read(12)  #  discard normal vector
+          facets[tx,:,:] = np.array([[struct.unpack('<f', fid.read(4))[0]
+            for cx in range(3)] for rx in range(3)]) 
+          fid.read(2)  #  discard 'attribute byte count'
+        fid.close()
+        self.facets = facets
+    elif facets != None:
       self.facets = facets
+    else:
+      raise polyTriError("Constructor for polyTri needs either facets or a filename whence to read them.")
 
   def __str__(self):
     return(self.facets.__str__())
+
+  def afxform(self, A):
+    # Applies the affine transformation described by the 4x4 matrix A to the nodes of self. Returns a copy.
+    augmented = np.concatenate((self.facets, np.full(self.facets.shape[:2] + (1,), 1)), 2)
+    augmented = np.einsum('kl,ijl', A, augmented)  #  i.e. multiply dimension 2 by A.
+    return polyTri(facets=augmented[:,:,:3])
+
+  def toPG(self, offset):
+    # Returns a PathGrid corresponding to the upper envelope of the polyTri. Might misbehave for nonconvex shapes.
+    xrange = [np.min(self.facets[:,:,0]), np.max(self.facets[:,:,0])]
+    nx = int((xrange[1]-xrange[0])/offset) + 1  #  number of x values to use
+    x = xrange[0] + (xrange[1]-xrange[0]-offset*(nx-1))/2 + offset*np.arange(nx)
+    yrange = [np.min(self.facets[:,:,1]), np.max(self.facets[:,:,1])]
+    ny = int((yrange[1]-yrange[0])/offset) + 1  #  number of y values to use
+    y = yrange[0] + (yrange[1]-yrange[0]-offset*(ny-1))/2 + offset*np.arange(ny)
+    xz = [np.row_stack((x,np.full(nx,np.NINF))) for yp in y]
+    for tri in self.facets:
+      Txy = np.row_stack((tri[:,:2].T, [1,1,1]))
+      if np.linalg.det(Txy):
+        # The triangle has nonzero horizontal area. (This test might be too crude.)
+        for (yj, yp) in enumerate(y):
+          if min(tri[:,1]) <= yp and max(tri[:,1]) >= yp:
+            # triangle seems to intersect this cross-section, so calc whole segment's xy coords' barycentrics:
+            bary = np.linalg.solve(Txy, np.row_stack((x, np.full(nx,yp), np.ones(nx))))
+            bnn = (bary>=0).all(axis=0)  #  indexes points inside the triangle
+            breakpoint()
+            xz[yj][1,bnn] = np.maximum(xz[yj][1,bnn], np.dot(tri[:,2],bary))  #  push path up to triangle
+    xz = [xzp[:,np.isfinite(xzp[1,:])] for xp in xz]
+    return PathGrid(y,xz)
 
 ##################################################################################################################
 
@@ -245,9 +280,16 @@ class PathGrid:
       # Find x values of nodes within segment and endpoint of segment:
       xChek=np.hstack((xzp[0,np.logical_and(xzp[0,:]>min(segment[0,:]),xzp[0,:]<max(segment[0,:]))],segment[0,:]))
       return np.max(np.interp(xChek,xzp[0,:],xzp[1,:])-np.interp(xChek,segment[0,:],segment[2,:]))
-    tiltxz = [xzp - np.interp(yp,segment[1,:],segment[2,:]) for (yp,xzp) in zip(self.y, self.xz)]
+    try:
+      tiltxz = [xzp - np.interp(yp,segment[1,:],segment[2,:]) for (yp,xzp) in zip(self.y, self.xz)]
+    except:
+      breakpoint()
     retval = np.NINF
-    xcrosses = segment[0,0] + (segment[0,1]-segment[0,0])/(segment[1,1]-segment[1,0]) * (self.y-segment[1,0])
+    # Getting a divide by zero here:
+    if (segment[1,1]-segment[1,0]):  #  usual case
+      xcrosses = segment[0,0] + (segment[0,1]-segment[0,0])/(segment[1,1]-segment[1,0]) * (self.y-segment[1,0])
+    else:  #  should only happen at the start or end, I guess, if 0 isn't in self.y
+      xcrosses = np.repeat(segment[0,None,:],len(self.y),axis=0)  #  bit of a hack, sorry
     for k in range(yk,yK):
       minx = max(np.min(segment[0,:]),np.min(xcrosses[k:k+2]))
       maxx = min(np.max(segment[0,:]),np.max(xcrosses[k:k+2]))
@@ -390,12 +432,12 @@ class PathGrid:
     ballrad = toolSeq[0]['bitrad']
     target = (self+buffer).castToMold(ballrad, 0.02*ballrad)  #  target mold for this tool
     targetDS = target.downsample(toolSeq[0]['ds'])  #  downsampled for actual cutting
-    toolFinalSH = targetDS.upsample(self).moldToCast(ballrad,0.02*ballrad)
 
     # There's probably a better way to deal with this, but at this point we'll convert shpaid to a PathGrid
     # if it's just a scalar. Note shpaid remains fullsampled.
     if isinstance(shpaid, numbers.Number):
       shpaid = PathGrid(self.y, [np.vstack((xzp[0,:],np.full(xzp.shape[1],shpaid))) for xzp in self.xz])
+    toolFinalSH = targetDS.upsample(self).moldToCast(ballrad,0.02*ballrad).min(shpaid)
     shpaid = shpaid.castToMold(ballrad, 0.02*ballrad)  #  working in 'mold' view from now on.
     shpaidDS = shpaid.downsample(toolSeq[0]['ds'])
 
@@ -412,9 +454,18 @@ class PathGrid:
       raise PathGridError("Wait, I'm confused. One tool's not cutting anything.")
     cutlevels = toolSeq[0]['cude'] * np.flip(np.arange(numcuts))
     PostSH = shpaidDS  #  effectively initialising PreSH [see 2 lines further]
+    # if len(toolSeq)<2:
+    #   breakpoint()
     for cule in cutlevels:
       PreSH = PostSH
       PostSH = (shpaidDS+0.001).min(targetDS+cule)  #  added micron to clarify where PostSH is below shpaid
+      if len(toolSeq)==1 and cule==cutlevels[-1]:
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(projection="3d")
+        PreSH.plot(ax)
+        plt.show()
+        breakpoint()
       cutxyz = PostSH.whereBelow(shpaidDS)  # segments needing cutting at this level
       while len(cutxyz):
         dists = np.row_stack([[np.sum((curpos-seg[:,0,None])**2), np.sum((curpos-seg[:,-1,None])**2)]
@@ -424,16 +475,52 @@ class PathGrid:
         nextpath = cutxyz.pop(locmin[0])  #  grab the closest path from the list
         if locmin[1]: nextpath = np.fliplr(nextpath)  #  reverse it if the end is closer than the start
 
-        # Now we know where we're headed, but there may be stuff to avoid en route. Firstly, if it's close, let's
-        # see whether we can go there in a single straight line:
-        if dists[locmin] > 625 or PostSH.maxoseg(np.column_stack((curpos, nextpath[:,0]))) > 0:
-          # There are obstacles.
-          minZ = PreSH.maxoseg(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[0,0]])) + 2
+        # # Now we know where we're headed, but there may be stuff to avoid en route. 1stly, if it's close, let's
+        # # see whether we can go there in a single straight line:
+        # if dists[locmin] > 225 or PostSH.maxoseg(np.column_stack((curpos, nextpath[:,0]))) > 0:
+        #   # There are obstacles. Consider doing y & xz motions separately, in either order:
+        #   
+        #   minZ = PreSH.maxoseg(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[0,0]])) + 2
+        #   # Rapidly rise to minZ, move x & y, then slowmo down to start of nextpath:
+        #   scpaths.append(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[minZ,minZ]]))
+        #   taxes.append(0)  #  rapid mode
+        # scpaths.append(nextpath)
+        # taxes.append(1)  #  feed mode
+
+        # Now we know where we're headed, but there may be stuff to avoid en route. If we're travelling more than
+        # 15mm, just pull the bit up and do rapid motion. Otherwise, do the first no-collision option among:
+        #   straight line
+        #   y and then x, with z at max at waypoint
+        #   x and then y, with z at max at waypoint
+        #   pull the bit up and do rapid motion.
+        if dists[locmin]<225 and PostSH.maxoseg(np.column_stack((curpos, nextpath[:,0]))) <= 0.01:
+          scpaths.append(nextpath)
+          taxes.append(1)  #  feed mode
+        elif (dists[locmin]<225 and
+          PostSH.maxoseg(np.column_stack((curpos,[curpos[0,0],nextpath[1,0],max(curpos[2,0],nextpath[2,0])])))
+          <= 0.01 and PostSH.maxoseg(np.column_stack((
+          [curpos[0,0],nextpath[1,0],max(curpos[2,0],nextpath[2,0])],nextpath[:,0]))) <= 0.01):
+          scpaths.append(np.column_stack(([curpos[0,0],nextpath[1,0],max(curpos[2,0],nextpath[2,0])],nextpath)))
+          taxes.append(1)  #  feed mode
+        elif (dists[locmin]<225 and
+          PostSH.maxoseg(np.column_stack((curpos,[nextpath[0,0],curpos[1,0],max(curpos[2,0],nextpath[2,0])])))
+          <= 0.01 and PostSH.maxoseg(np.column_stack((
+          [nextpath[0,0],curpos[1,0],max(curpos[2,0],nextpath[2,0])],nextpath[:,0]))) <= 0.01):
+          scpaths.append(np.column_stack(([nextpath[0,0],curpos[1,0],max(curpos[2,0],nextpath[2,0])],nextpath)))
+          taxes.append(1)  #  feed mode
+        elif dists[locmin]<225:
+          minZ = PreSH.maxoseg(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[0,0]]))
+          scpaths.append(np.hstack((
+            np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[minZ,minZ]]), nextpath)))
+          taxes.append(1)  #  feed mode
+        else:
           # Rapidly rise to minZ, move x & y, then slowmo down to start of nextpath:
+          minZ = PreSH.maxoseg(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[0,0]]))
+          minZ += 0.3*dists[locmin]**0.25  #  greater clearance when traversing longer distances
           scpaths.append(np.array([[curpos[0,0],nextpath[0,0]],[curpos[1,0],nextpath[1,0]],[minZ,minZ]]))
           taxes.append(0)  #  rapid mode
-        scpaths.append(nextpath)
-        taxes.append(1)  #  feed mode
+          scpaths.append(nextpath)
+          taxes.append(1)  #  feed mode
         curpos = nextpath[:,-1,None]
 
     # Now also need to return to origin:
@@ -527,10 +614,19 @@ def minPLFs(a,b):  #  pointwise minimum of two piecewise linear functions
   # Outputs min(a,b) in the same format & over the same (assumed common) range.
   return subtractPLFs(a, pospar(subtractPLFs(a,b)))
 
+def maxPLFs(plfs):  #  pointwise maximum of a list of piecewise linear functions.
+  # 
+
 ##################################################################################################################
 
 class Error(Exception):  #  Base class for exceptions in this module.
   pass
+
+class polyTriError(Error):  #  Exception raised for errors in the input.
+  # Attribute:
+  #   message -- explanation of the error
+  def __init__(self, message):
+    self.message = message
 
 class PathGridError(Error):  #  Exception raised for errors in the input.
   # Attribute:
