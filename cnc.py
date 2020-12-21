@@ -8,6 +8,7 @@ import struct
 import re
 import os
 import numbers
+import bisect
 #import warnings
 #warnings.filterwarnings("error")
 
@@ -614,8 +615,61 @@ def minPLFs(a,b):  #  pointwise minimum of two piecewise linear functions
   # Outputs min(a,b) in the same format & over the same (assumed common) range.
   return subtractPLFs(a, pospar(subtractPLFs(a,b)))
 
-def maxPLFs(plfs):  #  pointwise maximum of a list of piecewise linear functions.
-  # 
+##################################################################################################################
+
+def maxEdges(edges):
+  # Pointwise max of a list of line segments (i.e., linear univariate functions with bounded interval domains).
+  # Each input in the list is in the form np.array([[x0,x1],[z0,z1]]) with ideally x1>x0.
+  # The output is a 2-row matrix; the first row is an non-descending vector of x values, and the second row gives
+  # the corresponding z values.
+  # Will misbehave unless the union of edges' x intervals is convex.
+
+  edges = [edge for edge in edges if edge[0,0]<edge[0,1]]  #  remove degenerates
+  edges = [edges[k] for k in np.argsort([edge[0,0] for edge in edges])]  #  sort by lower x value
+  if not len(edges):
+    return np.zeros((2,0))
+  else:
+    noes = []  #  non-overlapping edges, popped out of 'edges' once they're free of overlap
+    def reinsert(edge):  #  so we can keep the list "edges" sorted
+      if edge[0,1]>edge[0,0]:
+        edges.insert(bisect.bisect([e[0,0] for e in edges], edge[0,0]), edge)
+    while len(edges):
+      if len(edges)==1 or edges[0][0,1] <= edges[1][0,0]:
+        noes.append(edges.pop(0))
+      else:
+        # The first two entries in edges overlap, so pop them, adjust them, & reinsert them:
+        disps = [edges.pop(0), edges.pop(0)]  #  short for 'disputants': two overlapping edges to be reconciled
+        olreg = np.array([max(disps[0][0,0],disps[1][0,0]),min(disps[0][0,1],disps[1][0,1])])  #  "OverLap REGion"
+        olvals = [np.interp(olreg, *disp) for disp in disps]  #  z values of disputants at edges of overlap
+        # Now relevant fragments of each disputant edge (any non-pos interval will be skipped by reinsert):
+        if (olvals[1] <= olvals[0]).all():
+          # Just use D0 on the overlap
+          reinsert(disps[0])  #  Disputant 0 is unaffected
+          reinsert(np.column_stack(([olreg[1], np.interp(olreg[1], *disps[1])], disps[1][:,1])))
+        elif (olvals[0] <= olvals[1]).all():
+          # Just use D1 on the overlap
+          reinsert(np.column_stack((disps[0][:,0], [olreg[0], np.interp(olreg[0], *disps[0])])))
+          reinsert(np.column_stack(([olreg[1], np.interp(olreg[1], *disps[0])], disps[0][:,1])))
+          reinsert(disps[1])
+        else:
+          # Find the intersection of the two segments in the overlap & use two parts
+          s = (olvals[0][0]-olvals[1][0])/(olvals[0][0]-olvals[1][0]+olvals[1][1]-olvals[0][1])
+          intsec = [olreg[0]+s*(olreg[1]-olreg[0]), olvals[1][0]+s*(olvals[1][1]-olvals[1][0])]
+          if olvals[1][0]>olvals[0][0]:
+            reinsert(np.column_stack((disps[0][:,0], [olreg[0], np.interp(olreg[0], *disps[0])])))
+            reinsert(np.column_stack((intsec, disps[0][:,1])))
+            reinsert(np.column_stack((disps[1][:,0], intsec)))
+            reinsert(np.column_stack(([olreg[1], np.interp(olreg[1], *disps[1])], disps[1][:,1])))
+          else:
+            reinsert(np.column_stack((disps[0][:,0], intsec)))
+            reinsert(np.column_stack(([olreg[1], np.interp(olreg[1], *disps[0])], disps[0][:,1])))
+            reinsert(np.column_stack((intsec, disps[1][:,1])))
+    vlist = [noes[0][:,0], noes[0][:,1]]
+    for edge in noes[1:]:
+      if (edge[:,0]!=vlist[-1]).any():
+        vlist.append(edge[:,0])
+      vlist.append(edge[:,1])
+    return np.array(vlist).T
 
 ##################################################################################################################
 
