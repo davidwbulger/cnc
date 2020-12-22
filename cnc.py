@@ -4,6 +4,7 @@
 # Assume Cartesian coordinates and millimetres.
 
 import numpy as np
+import scipy.linalg as salg
 import struct
 import re
 import os
@@ -19,7 +20,7 @@ import bisect
 class polyTri:
   # Note that self.facets[i,j,k] is the kth coord of the jth vertex of the ith triangle.
   def __init__(self,fname=None,facets=None):
-    if fname != None:
+    if fname is not None:
       # Read fname (an STL file) to build a polyTri structure
       fid = open(fname, "rb")
       if fid.read(5) == b"solid":
@@ -47,13 +48,21 @@ class polyTri:
           fid.read(2)  #  discard 'attribute byte count'
         fid.close()
         self.facets = facets
-    elif facets != None:
+    elif facets is not None:
       self.facets = facets
     else:
       raise polyTriError("Constructor for polyTri needs either facets or a filename whence to read them.")
 
   def __str__(self):
-    return(self.facets.__str__())
+    mv = np.min(self.facets, axis=(0,1))
+    Mv = np.max(self.facets, axis=(0,1))
+    return(f"polyTri object with {len(self.facets)} facets and bounding box\n"
+      "[{:.2},{:.2}]x[{:.2},{:.2}]x[{:.2},{:.2}].".format(*(self.bbox().flatten())))
+      #f"[{mv[0]:.2f},{Mv[0]:.2f}]x[{mv[1]:.2f},{Mv[1]:.2f}]x[{mv[2]:.2f},{Mv[2]:.2f}].")
+
+  def bbox(self):
+    # Returns bounding box as a 3x2 array
+    return np.column_stack((np.min(self.facets, axis=(0,1)), np.max(self.facets, axis=(0,1))))
 
   def afxform(self, A):
     # Applies the affine transformation described by the 4x4 matrix A to the nodes of self. Returns a copy.
@@ -61,27 +70,48 @@ class polyTri:
     augmented = np.einsum('kl,ijl', A, augmented)  #  i.e. multiply dimension 2 by A.
     return polyTri(facets=augmented[:,:,:3])
 
-  def toPG(self, offset):
+  def addConvexPolygon(self, verts):
+    # The argument verts should be a Jx3 array of vertices, in order, of a convex polygon to be added to self.
+    # self.facets.extend([verts[[0,j-1,j],:] for j in range(2,verts.shape[0])])
+    self.facets = np.concatenate((self.facets, np.stack([verts[[0,j-1,j],:] for j in range(2,verts.shape[0])])))
+
+  def toPG(self, offset, floor=None):
     # Returns a PathGrid corresponding to the upper envelope of the polyTri. Might misbehave for nonconvex shapes.
-    xrange = [np.min(self.facets[:,:,0]), np.max(self.facets[:,:,0])]
-    nx = int((xrange[1]-xrange[0])/offset) + 1  #  number of x values to use
-    x = xrange[0] + (xrange[1]-xrange[0]-offset*(nx-1))/2 + offset*np.arange(nx)
+    if floor is None:
+      floor = self.bbox()[2,0]
     yrange = [np.min(self.facets[:,:,1]), np.max(self.facets[:,:,1])]
     ny = int((yrange[1]-yrange[0])/offset) + 1  #  number of y values to use
     y = yrange[0] + (yrange[1]-yrange[0]-offset*(ny-1))/2 + offset*np.arange(ny)
-    xz = [np.row_stack((x,np.full(nx,np.NINF))) for yp in y]
+    edgelists = [[] for yp in y]
     for tri in self.facets:
       Txy = np.row_stack((tri[:,:2].T, [1,1,1]))
       if np.linalg.det(Txy):
         # The triangle has nonzero horizontal area. (This test might be too crude.)
-        for (yj, yp) in enumerate(y):
+
+        # This fancy plan succumbed to numerical instability:
+        # invT = np.linalg.inv(Txy)
+        # v = salg.null_space(Txy[1:,:])
+        # for (yp, el) in zip(y, edgelists):
+        #   if min(tri[:,1]) <= yp and max(tri[:,1]) >= yp:
+        #     # triangle seems to intersect this cross-section, so calculate the segment:
+        #     u = np.matmul(invT, np.array([[0,yp,1]]).T)
+        #     edge = np.matmul(tri.T[[0,2],:], u+v*np.array([np.max(-u[v>0]/v[v>0]), np.min(-u[v<0]/v[v<0])]))
+        #     if (np.abs(edge)>500).any():
+        #       breakpoint()
+        #     if edge[0,0]>edge[0,1]: edge = np.fliplr(edge)
+        #     el.append(edge)
+
+        # Another option would be to use scipy.optimize.linprog, but that seems likely to be slow, just due to the
+        # amount of stuff in its return structure.
+
+        for (yp, el) in zip(y, edgelists):
           if min(tri[:,1]) <= yp and max(tri[:,1]) >= yp:
-            # triangle seems to intersect this cross-section, so calc whole segment's xy coords' barycentrics:
-            bary = np.linalg.solve(Txy, np.row_stack((x, np.full(nx,yp), np.ones(nx))))
-            bnn = (bary>=0).all(axis=0)  #  indexes points inside the triangle
-            breakpoint()
-            xz[yj][1,bnn] = np.maximum(xz[yj][1,bnn], np.dot(tri[:,2],bary))  #  push path up to triangle
-    xz = [xzp[:,np.isfinite(xzp[1,:])] for xp in xz]
+            # triangle seems to intersect this cross-section, so calculate the segment:
+            edge = np.column_stack([tri[j,[0,2]]+((yp-tri[j,1])/(tri[k,1]-tri[j,1]))*(tri[k,[0,2]]-tri[j,[0,2]])
+              for (j,k) in [(0,1),(0,2),(1,2)] if (yp-tri[j,1])*(yp-tri[k,1])<=0])
+            edge = edge[:,[np.argmin(edge[0,:]),np.argmax(edge[0,:])]]
+            el.append(edge)
+    xz = [maxEdges(el,offset*0.02,floor) for el in edgelists]
     return PathGrid(y,xz)
 
 ##################################################################################################################
@@ -617,13 +647,15 @@ def minPLFs(a,b):  #  pointwise minimum of two piecewise linear functions
 
 ##################################################################################################################
 
-def maxEdges(edges):
+def maxEdges(edges, fudge=None, floor=None):
   # Pointwise max of a list of line segments (i.e., linear univariate functions with bounded interval domains).
   # Each input in the list is in the form np.array([[x0,x1],[z0,z1]]) with ideally x1>x0.
   # The output is a 2-row matrix; the first row is an non-descending vector of x values, and the second row gives
   # the corresponding z values.
   # Will misbehave unless the union of edges' x intervals is convex.
 
+  if fudge == None:  #  fudge is how close two x values need to be to be considered as coincident
+    fudge = 1e-4 * np.ptp([e[0,k] for e in edges for k in range(2)])
   edges = [edge for edge in edges if edge[0,0]<edge[0,1]]  #  remove degenerates
   edges = [edges[k] for k in np.argsort([edge[0,0] for edge in edges])]  #  sort by lower x value
   if not len(edges):
@@ -631,7 +663,7 @@ def maxEdges(edges):
   else:
     noes = []  #  non-overlapping edges, popped out of 'edges' once they're free of overlap
     def reinsert(edge):  #  so we can keep the list "edges" sorted
-      if edge[0,1]>edge[0,0]:
+      if edge[0,1]>edge[0,0]+fudge:
         edges.insert(bisect.bisect([e[0,0] for e in edges], edge[0,0]), edge)
     while len(edges):
       if len(edges)==1 or edges[0][0,1] <= edges[1][0,0]:
@@ -666,7 +698,11 @@ def maxEdges(edges):
             reinsert(np.column_stack((intsec, disps[1][:,1])))
     vlist = [noes[0][:,0], noes[0][:,1]]
     for edge in noes[1:]:
-      if (edge[:,0]!=vlist[-1]).any():
+      # if (edge[:,0]!=vlist[-1]).any():
+      if np.linalg.norm(edge[:,0] - vlist[-1]) > fudge:
+        if floor is not None:
+          vlist.append(np.array([vlist[-1][0],floor]))
+          vlist.append(np.array([edge[0,0],floor]))
         vlist.append(edge[:,0])
       vlist.append(edge[:,1])
     return np.array(vlist).T
