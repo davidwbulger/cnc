@@ -70,6 +70,12 @@ class polyTri:
     augmented = np.einsum('kl,ijl', A, augmented)  #  i.e. multiply dimension 2 by A.
     return polyTri(facets=augmented[:,:,:3])
 
+  def centreTop(self):
+    # Translates the polyTri so that the centre of its bounding box's upper face is the origin.
+    bb = self.bbox()
+    return self.afxform(np.array(
+      [[1,0,0,-0.5*(bb[0,0]+bb[0,1])],[0,1,0,-0.5*(bb[1,0]+bb[1,1])],[0,0,1,-bb[2,1]],[0,0,0,1]]))
+
   def addConvexPolygon(self, verts):
     # The argument verts should be a Jx3 array of vertices, in order, of a convex polygon to be added to self.
     # self.facets.extend([verts[[0,j-1,j],:] for j in range(2,verts.shape[0])])
@@ -130,14 +136,17 @@ class ToolPath:
       raise ToolPathError(
         "Taxis change nodes (first row of taxis) must increase from first node index, stopping before the last.")
     if not all(np.logical_or(taxis[1,:]==0, taxis[1,:]==1)):
+      breakpoint()
       raise ToolPathError("Taxis changes (second row of taxis) must be binary.")
     self.nodes = nodes
     self.taxis = taxis
 
   def __str__(self):
-    cuts = [nodes[:,taxis[0,j]:(taxis[0,j+1]+1)] for j in range(taxis.shape[1]-1) if taxis[1,j]==1]
+    cuts = [self.nodes[:,self.taxis[0,j]:(self.taxis[0,j+1]+1)] for j in range(self.taxis.shape[1]-1)
+      if self.taxis[1,j]==1]
     cutlen = sum([sum(np.linalg.norm(np.diff(cut,axis=1),axis=0)) for cut in cuts])
-    raps = [nodes[:,taxis[0,j]:(taxis[0,j+1]+1)] for j in range(taxis.shape[1]-1) if taxis[1,j]==0]
+    raps = [self.nodes[:,self.taxis[0,j]:(self.taxis[0,j+1]+1)] for j in range(self.taxis.shape[1]-1)
+      if self.taxis[1,j]==0]
     raplen = sum([sum(np.linalg.norm(np.diff(rap,axis=1),axis=0)) for rap in raps])
     m = np.min(self.nodes,1)
     M = np.max(self.nodes,1)
@@ -194,7 +203,7 @@ class ToolPath:
     # Plot a ToolPath on the 3D axis "ax", in the given color.
     for j in range(self.taxis.shape[1]-1):
       if self.taxis[1,j]:  #  only the cut paths, not the motions.
-        ax.plot(*self.nodes[:,taxis[0,j]:taxis[0,j+1]+1], color, linewidth=linewidth)
+        ax.plot(*self.nodes[:,self.taxis[0,j]:self.taxis[0,j+1]+1], color, linewidth=linewidth)
 
 def compileToolPath(paths, taxes):
   # Combine compatible lists of 3D paths and heights into a ToolPath object.
@@ -207,13 +216,10 @@ def compileToolPath(paths, taxes):
   return ToolPath(nodes, taxis)
 
 def catToolPaths(TPList):
-  raise ToolPathError("This isn't yet updated for the new ToolPath definition.")
-  # Joins the ToolPaths in TPList.
-  indexoffsets = np.cumsum([0]+[tp.nodes.shape[1]-1 for tp in TPList[0:-1]])
-  return ToolPath(np.hstack([tp.nodes[:,0:-1] for tp in TPList[0:-1]] + [TPList[-1].nodes]),
-    np.vstack([np.hstack([tp.taxis[0,0:-1]+io for (tp,io) in zip(TPList[0:-1],indexoffsets)] +
-      [TPList[-1].taxis[0,:]+indexoffsets[-1]]),
-      np.hstack([tp.taxis[1,0:-1] for tp in TPList[0:-1]]+[TPList[-1].taxis[1,:]])]))
+  while len(TPList) > 1:
+    TPList[:2] = [ToolPath(np.concatenate((TPList[0].nodes[:,:-1], TPList[1].nodes),axis=1),
+      np.concatenate((TPList[0].taxis, TPList[1].taxis+np.array([[TPList[0].nodes.shape[1]-1],[0]])),axis=1))]
+  return TPList[0]
 
 def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
   # Utility to plane a rectangle.
@@ -230,12 +236,13 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
   y = np.linspace(yran[0],yran[1],num=numRows)
   nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
     np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
-  nodes = np.hstack((nodes, np.matmul(nodes[:,-1,None],np.array([[1,0]]))))
-  nodes[2,-2:0] = sht
+  nodes = np.hstack((np.array([[0,0],[0,0],[0,sht]]), nodes, np.matmul(nodes[:,-1,None],np.array([[1,0,0]]))))
+  nodes[2,-3:-1] = sht
   #  print(nodes)  #  debugging
   if swapped:
     nodes = nodes[[1,0,2],:]
-  ToolPath(nodes, np.array([[0],[nodes.shape[1]]]), np.array([sht])).PathToGCode(feedrate, fname)
+  taxis = np.array([[0,2,nodes.shape[1]-4],[0,1,0]])
+  ToolPath(nodes, taxis).PathToGCode(feedrate, fname)
 
 ##################################################################################################################
 
@@ -442,7 +449,13 @@ class PathGrid:
     for (yp,xzp) in zip(self.y, self.xz):
       ax.plot(xzp[0,:], yp*np.ones(xzp.shape[1]), xzp[1,:], color, linewidth=1)
 
-  def MultiToolGreedy(self, shpaid, toolSeq):
+  def SingleToolNoOpt(self, bitrad):
+    # This directly converts a PathGrid into a corresponding ToolPath, for a single tool only, with no "pacing."
+    # The onus is on the user to ensure either that the cutting is shallow enough to be done in one pass, or that
+    # this cut is manually re-run from a descending sequence of origins.
+    return self.MultiToolGreedy(0,[{'bitrad':bitrad,'cude':1000,'ds':1}],yinc=True)[0]
+
+  def MultiToolGreedy(self, shpaid, toolSeq, yinc=False):
     # This creates a sequence of ToolPaths (one per tool in the provided sequence of ball-end drill bits, of
     # presumably decreasing radius), each working its way down from an initial stockheight, in general via a
     # sequence of not-very-deep cuts. Probably in practice the toolSeq will have length 1 (a single bit) or
@@ -454,6 +467,7 @@ class PathGrid:
     #     bitrad:      RADIUS (NOT DIAMETER) of bit, assumed to be ball-nose
     #     cude:        depth of wood it can remove in each pass
     #     ds:          ('downsample') offset for this tool will be ds times self's offset
+    #   yinc:        if true, this will make cuts in nondescending order of y-coordinate
 
     # Most of the logic here deals with the first tool in the list. The rest are handled via recursion.
 
@@ -490,19 +504,22 @@ class PathGrid:
     for cule in cutlevels:
       PreSH = PostSH
       PostSH = (shpaidDS+0.001).min(targetDS+cule)  #  added micron to clarify where PostSH is below shpaid
-      if len(toolSeq)==1 and cule==cutlevels[-1]:
-        import matplotlib.pyplot as plt
-        fig = plt.figure()
-        ax = fig.add_subplot(projection="3d")
-        PreSH.plot(ax)
-        plt.show()
-        breakpoint()
+      # if len(toolSeq)==1 and cule==cutlevels[-1]:
+      #   import matplotlib.pyplot as plt
+      #   fig = plt.figure()
+      #   ax = fig.add_subplot(projection="3d")
+      #   PreSH.plot(ax)
+      #   plt.show()
+      #   breakpoint()
       cutxyz = PostSH.whereBelow(shpaidDS)  # segments needing cutting at this level
       while len(cutxyz):
         dists = np.row_stack([[np.sum((curpos-seg[:,0,None])**2), np.sum((curpos-seg[:,-1,None])**2)]
           for seg in cutxyz])
         # Now find location in this two column array of the minimum; pop the rowth el of cutxyz; rev if 2nd col:
-        locmin = np.unravel_index(dists.argmin(),dists.shape)  #  location of shortest (squared) distance
+        if yinc:
+          locmin = (0,dists[0,:].argmin())
+        else:
+          locmin = np.unravel_index(dists.argmin(),dists.shape)  #  location of shortest (squared) distance
         nextpath = cutxyz.pop(locmin[0])  #  grab the closest path from the list
         if locmin[1]: nextpath = np.fliplr(nextpath)  #  reverse it if the end is closer than the start
 
