@@ -14,7 +14,7 @@ blankCutDepth = 14  #  board seems to be 10mm, and bit radius is 3mm; this is 1m
 blankNumPasses = 3
 blankbitrad = 3
 excess = 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
-rf = 24 # 66  #  planar exradius of face at outside [see Appendix A]
+rf = 32 # 66  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 
 # gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
@@ -43,7 +43,7 @@ phi = (1+np.sqrt(5))/2
 ballrad = realBallRad-glueGapHack  #  We'll tell the cnc module that this is the bit radius, to persuade it to leave room for glue.
 xzmast = np.vstack((irf*(1-np.array([th+2*ballrad,th,mitreMargin,th,mitreMargin,0,-2*ballrad])/ird),
   np.array([2*ballrad,0,-v,-th+mitreMargin+v,-th+mitreMargin,-th,-th-2*ballrad])))  #  all nodes used on any path
-gcodeToolSeq = [{'bitrad':ballrad,'cude':20.0,'ds':1}]
+gcodeToolSeq = [{'bitrad':ballrad,'cude':2.0,'ds':1}]
 toothWidth = 2*realBallRad-1.9*glueGapHack  #  2*(rBR-gGH) would be "perfect" but this leaves a tolerance
 edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
 numTeeth = int(np.floor(edgeHalfLen*edgePropJoined/toothWidth))
@@ -158,7 +158,7 @@ for numJointEdges in [2,3,4,5]:
     alltooth.plot(ax, 'red', linewidth=1)
     cnc.hackaspect(ax)
     plt.show()
-  alltooth.PathToGCode(5, f"SDFace{numJointEdges}.gcode")
+  alltooth.PathToGCode(500, f"SDFace{numJointEdges}.gcode")
 
 # Actually rotate these into position to look at the geometry of the equatorial clamping jig.
 
