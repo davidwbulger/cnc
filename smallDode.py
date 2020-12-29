@@ -10,11 +10,11 @@ import matplotlib.pyplot as plt
 
 #### ##    PARAMETERS:    ## #####
 
-blankCutDepth = 14  #  board seems to be 10mm, and bit radius is 3mm; this is 1mm extra
-blankNumPasses = 3
-blankbitrad = 3
-excess = 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
-rf = 32 # 66  #  planar exradius of face at outside [see Appendix A]
+blankCutDepth = 6 # 14  #  board seems to be 10mm, and bit radius is 3mm; this is 1mm extra
+blankNumPasses = 3 # 3
+blankbitrad = 1 # 3
+excess = 0 # 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
+rf = 68  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 
 # gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
@@ -131,7 +131,7 @@ teethtooth = rounded.MultiToolGreedy(0, gcodeToolSeq, yinc=True)[0]
 # Actual vertices are [xzmast[0,{0,6}], {+,-}edgeHalfLen, xzmast[1,{0,6}].
 # We want the cuts in the long direction, though, so we'll construct this at 90deg & then rotate it back.
 # Thus transformed vertices are [{+,-}edgeHalfLen, xzmast[0,{0,6}], xzmast[1,{0,6}].
-s = np.linspace(0, 1, int(np.ceil((xzmast[0,6]-xzmast[0,0])/offset)))
+s = np.linspace(0, 1, 3*int(np.ceil((xzmast[0,6]-xzmast[0,0])/offset)))  #  multiplying by 3 since these edges were a bit rough in the test cut
 
 flat = cnc.PathGrid(xzmast[0,0]+(xzmast[0,6]-xzmast[0,0])*s,
   [np.array([[-edgeHalfLen,edgeHalfLen],2*[xzmast[1,0]+(xzmast[1,6]-xzmast[1,0])*sval]]) for sval in s])   #   HIPPO
