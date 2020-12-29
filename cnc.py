@@ -232,16 +232,24 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
     swapped = True
   else:
     swapped = False
+
   numRows = 2 + int(np.floor(ywd/offset))
   y = np.linspace(yran[0],yran[1],num=numRows)
-  nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
-    np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
-  nodes = np.hstack((np.array([[0,0],[0,0],[0,sht]]), nodes, np.matmul(nodes[:,-1,None],np.array([[1,0,0]]))))
-  nodes[2,-3:-1] = sht
-  #  print(nodes)  #  debugging
+
+  # Changing this to cut in one direction only, in the hope of getting a smoother surface.
+  # nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
+  #   np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
+  # nodes = np.hstack((np.array([[0,0],[0,0],[0,sht]]), nodes, np.matmul(nodes[:,-1,None],np.array([[1,0,0]]))))
+  # nodes[2,-3:-1] = sht
+  # taxis = np.array([[0,2,nodes.shape[1]-4],[0,1,0]])
+
+  nodes = np.array([[0,0,0], [0,0,sht]] +
+    [[xran[j],yp,z] for yp in y for (j,z) in [(0,sht),(0,zht),(1,zht),(1,sht)]] +
+    [[0,0,sht], [0,0,0]]).T
+  taxis = np.array([[2*k,k%2] for k in range(2*len(y)+1)]).T
+
   if swapped:
     nodes = nodes[[1,0,2],:]
-  taxis = np.array([[0,2,nodes.shape[1]-4],[0,1,0]])
   ToolPath(nodes, taxis).PathToGCode(feedrate, fname)
 
 ##################################################################################################################
