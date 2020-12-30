@@ -14,7 +14,7 @@ blankCutDepth = 6 # 14  #  board seems to be 10mm, and bit radius is 3mm; this i
 blankNumPasses = 3 # 3
 blankbitrad = 1 # 3
 excess = 0 # 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
-rf = 68  #  planar exradius of face at outside [see Appendix A]
+rf = 67  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 
 # gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
@@ -27,8 +27,8 @@ boolPlot = False
 ## TOOTH WIDTH/SHAPE STUFF:
 # After a failed first try (I believe due to numerical precision errors) I'm now fixing the tooth width as the width of the drill bit---essentially. The
 # true bit width will be the mortisse width, and the tooth width will be slightly smaller, with the difference determined by glueGapHack.
-glueGapHack = 0.03
-realBallRad = 1.0
+glueGapHack = 0.001 # 0.03
+realBallRad = 1.13  #  it's REALLY 1.0, but this seems to be the half-width of the cut, between teeth at least
 cutsPerTooth = 6
 if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
 
