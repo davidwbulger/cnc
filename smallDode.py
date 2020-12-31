@@ -14,7 +14,7 @@ blankCutDepth = 6 # 14  #  board seems to be 10mm, and bit radius is 3mm; this i
 blankNumPasses = 3 # 3
 blankbitrad = 1 # 3
 excess = 0 # 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
-rf = 67  #  planar exradius of face at outside [see Appendix A]
+rf = 57 # 67  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 
 # gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
@@ -28,7 +28,7 @@ boolPlot = False
 # After a failed first try (I believe due to numerical precision errors) I'm now fixing the tooth width as the width of the drill bit---essentially. The
 # true bit width will be the mortisse width, and the tooth width will be slightly smaller, with the difference determined by glueGapHack.
 glueGapHack = 0.001 # 0.03
-realBallRad = 1.13  #  it's REALLY 1.0, but this seems to be the half-width of the cut, between teeth at least
+realBallRad = 1.17  #  it's REALLY 1.0, but this seems to be the half-width of the cut, between teeth at least
 cutsPerTooth = 6
 if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
 
@@ -43,7 +43,7 @@ phi = (1+np.sqrt(5))/2
 ballrad = realBallRad-glueGapHack  #  We'll tell the cnc module that this is the bit radius, to persuade it to leave room for glue.
 xzmast = np.vstack((irf*(1-np.array([th+2*ballrad,th,mitreMargin,th,mitreMargin,0,-2*ballrad])/ird),
   np.array([2*ballrad,0,-v,-th+mitreMargin+v,-th+mitreMargin,-th,-th-2*ballrad])))  #  all nodes used on any path
-gcodeToolSeq = [{'bitrad':ballrad,'cude':2.0,'ds':1}]
+gcodeToolSeq = [{'bitrad':ballrad,'cude':1.5,'ds':1}]
 toothWidth = 2*realBallRad-1.9*glueGapHack  #  2*(rBR-gGH) would be "perfect" but this leaves a tolerance
 edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
 numTeeth = int(np.floor(edgeHalfLen*edgePropJoined/toothWidth))
@@ -78,11 +78,11 @@ btp.PathToGCode(500, "Blank.gcode")
 
 verts = 0.5*(rf+1.3+excess)*np.array([[phi, np.sqrt(3-phi)], [1-phi,np.sqrt(phi+2)], [-2,0], [1-phi,-np.sqrt(phi+2)], [phi,-np.sqrt(3-phi)]])
 bnodes = np.zeros((3,7+6*1))
-bnodes[:,:4] = np.array([[0,0,0],[0,0,5],[*verts[0,:],5],[*verts[0,:],0]]).T
-bnodes[:,-3:] = np.array([[*verts[0,:],5], [0,0,5], [0,0,0]]).T 
-bnodes[:2,4] = verts[0,:]
+bnodes[:,:4] = np.array([[0,0,0],[0,0,5],[*verts[-1,:],5],[*verts[-1,:],0]]).T
+bnodes[:,-3:] = np.array([[*verts[-1,:],5], [0,0,5], [0,0,0]]).T 
+bnodes[:2,4] = verts[-1,:]
 bnodes[:2, 5:10] = verts.T
-bnodes[2,5:10] = -1.0
+bnodes[2,5:10] = -0.6
 
 btaxis = np.array([[0, 3, 10], [0,1,0]])
 
@@ -118,25 +118,25 @@ while abserr > ctol:
   roundabove = rounded.roundJoint(ballrad,ctol)
   roundbelow = flipt.roundJoint(ballrad,ctol)
   abserr = (roundabove-roundbelow).maxabs()
-  rounded = 0.5 * (roundabove + roundbelow)
-  # rounded = roundabove.min(roundbelow)  #  elementwise min of two PathGrids
+  # rounded = 0.5 * (roundabove + roundbelow)
+  rounded = roundabove.min(roundbelow)  #  elementwise min of two PathGrids
 
 # cutpath = rounded.castToMold(ballrad, ctol, np.NINF)
 # cutpath = rounded
 # teethtooth = cutpath.MultiToolGreedy(0, gcodeToolSeq, yinc=True)[0]
-teethtooth = rounded.MultiToolGreedy(0, gcodeToolSeq, yinc=True)[0]
+teethtooth = (rounded+th-20).MultiToolGreedy(th-20, gcodeToolSeq, yinc=True)[0]
 
 #### ##    CREATE THE TOOLPATH FOR THE EDGES WITHOUT TEETH:    ## #####
 
 # Actual vertices are [xzmast[0,{0,6}], {+,-}edgeHalfLen, xzmast[1,{0,6}].
 # We want the cuts in the long direction, though, so we'll construct this at 90deg & then rotate it back.
 # Thus transformed vertices are [{+,-}edgeHalfLen, xzmast[0,{0,6}], xzmast[1,{0,6}].
-s = np.linspace(0, 1, 3*int(np.ceil((xzmast[0,6]-xzmast[0,0])/offset)))  #  multiplying by 3 since these edges were a bit rough in the test cut
+s = np.linspace(0, 1, 1*int(np.ceil((xzmast[0,6]-xzmast[0,0])/offset)))  #  multiplying by 3 since these edges were a bit rough in the test cut (no; can just sand)
 
 flat = cnc.PathGrid(xzmast[0,0]+(xzmast[0,6]-xzmast[0,0])*s,
   [np.array([[-edgeHalfLen,edgeHalfLen],2*[xzmast[1,0]+(xzmast[1,6]-xzmast[1,0])*sval]]) for sval in s])   #   HIPPO
 # cutpath = flat.castToMold(ballrad, ctol, np.NINF)
-flattooth = flat.MultiToolGreedy(0, gcodeToolSeq, yinc=True)[0]
+flattooth = (flat+th-20).MultiToolGreedy(th-20, gcodeToolSeq, yinc=True)[0]
 flattooth = flattooth.afxform(np.array([[0,1,0,0],[-1,0,0,0],[0,0,1,0],[0,0,0,1]]))
 
 
@@ -158,7 +158,10 @@ for numJointEdges in [2,3,4,5]:
     alltooth.plot(ax, 'red', linewidth=1)
     cnc.hackaspect(ax)
     plt.show()
-  alltooth.PathToGCode(500, f"SDFace{numJointEdges}.gcode")
+  alltooth.PathToGCode(300, f"SDFace{numJointEdges}.gcode")
+  if numJointEdges==2:
+    oops = cnc.ToolPath(alltooth.nodes * np.array([[1],[-1],[1]]), alltooth.taxis)
+    oops.PathToGCode(300, "Oops.gcode")
 
 # Actually rotate these into position to look at the geometry of the equatorial clamping jig.
 
