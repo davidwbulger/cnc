@@ -16,6 +16,7 @@ blankbitrad = 1 # 3
 excess = 0 # 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
 rf = 57 # 67  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
+originHeight = 20
 
 # gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
 
@@ -25,10 +26,18 @@ mitreMargin = 1  #  vertically, for simplicity
 boolPlot = False
 
 ## TOOTH WIDTH/SHAPE STUFF:
+
 # After a failed first try (I believe due to numerical precision errors) I'm now fixing the tooth width as the width of the drill bit---essentially. The
 # true bit width will be the mortisse width, and the tooth width will be slightly smaller, with the difference determined by glueGapHack.
 glueGapHack = 0.001 # 0.03
 realBallRad = 1.17  #  it's REALLY 1.0, but this seems to be the half-width of the cut, between teeth at least
+
+realBallRad = 1.00
+glueGapHack = 0.06 # 0.03
+mortiseWidthHack = 1.19 # 0.17
+rf = 24
+edgePropJoined = 0.5
+
 cutsPerTooth = 6
 if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
 
@@ -44,7 +53,7 @@ ballrad = realBallRad-glueGapHack  #  We'll tell the cnc module that this is the
 xzmast = np.vstack((irf*(1-np.array([th+2*ballrad,th,mitreMargin,th,mitreMargin,0,-2*ballrad])/ird),
   np.array([2*ballrad,0,-v,-th+mitreMargin+v,-th+mitreMargin,-th,-th-2*ballrad])))  #  all nodes used on any path
 gcodeToolSeq = [{'bitrad':ballrad,'cude':1.5,'ds':1}]
-toothWidth = 2*realBallRad-1.9*glueGapHack  #  2*(rBR-gGH) would be "perfect" but this leaves a tolerance
+toothWidth = mortiseWidthHack*(2*realBallRad-1.9*glueGapHack)  #  2*(rBR-gGH) would be "perfect" but this leaves a tolerance
 edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
 numTeeth = int(np.floor(edgeHalfLen*edgePropJoined/toothWidth))
 
@@ -93,13 +102,14 @@ btp.PathToGCode(300, "Guide.gcode")
 
 ## -------------------------------------------------------------------------------------------------------
 
-offset = 2*toothWidth/cutsPerTooth  #  update offset for integer number of cuts per tooth
+offset = 2*toothWidth/cutsPerTooth  #  update offset for integer number of cuts per tooth (ACTUAL offset, not hacked for mortise width)
 xzflat = xzmast[:,[0,6]]        #  the straight paths (near the corners)
 xzup = xzmast[:,[0,1,2,4,6]]    #  the tenons (or "teeth" or "fingers")
 xzdown = xzmast[:,[0,1,3,4,6]]  #  the mortises
+
 numCornerCuts = int(np.ceil(edgeHalfLen/offset-(cutsPerTooth//2)*numTeeth))
-xz = [xzflat]*numCornerCuts + ([xzup]*(cutsPerTooth//2) + [xzdown]*(cutsPerTooth//2))*numTeeth + [xzflat]*numCornerCuts   #   HIPPO
-maxAbsY = offset*0.5*(len(xz)-1)
+xz = [xzflat]*numCornerCuts + ([xzup]*(cutsPerTooth//2) + [xzdown]*(cutsPerTooth//2))*numTeeth + [xzflat]*numCornerCuts
+maxAbsY = offset*0.5*(len(xz)-1) / mortiseWidthHack
 y = np.linspace(-maxAbsY, maxAbsY, len(xz))
 
 # Figure out how to "flip" the joint edge:
@@ -117,14 +127,18 @@ while abserr > ctol:
   flipt = cnc.PathGrid(rounded.y, [moff+np.matmul(M,tp) for tp in reversed(rounded.xz)])
   roundabove = rounded.roundJoint(ballrad,ctol)
   roundbelow = flipt.roundJoint(ballrad,ctol)
+  # roundabove = rounded.castToMold(ballrad,ctol).moldToCast(ballrad,ctol)
+  # roundbelow = flipt.castToMold(ballrad,ctol).moldToCast(ballrad,ctol)
   abserr = (roundabove-roundbelow).maxabs()
-  # rounded = 0.5 * (roundabove + roundbelow)
-  rounded = roundabove.min(roundbelow)  #  elementwise min of two PathGrids
+  rounded = 0.5 * (roundabove + roundbelow)
+  # rounded = roundabove.min(roundbelow)  #  elementwise min of two PathGrids
+breakpoint()
 
-# cutpath = rounded.castToMold(ballrad, ctol, np.NINF)
+# cutpath = rounded.castToMold(ballrad, ctol, np.NINF)  #  no longer necessary since MultiToolGreedy inputs "cast" format
 # cutpath = rounded
 # teethtooth = cutpath.MultiToolGreedy(0, gcodeToolSeq, yinc=True)[0]
-teethtooth = (rounded+th-20).MultiToolGreedy(th-20, gcodeToolSeq, yinc=True)[0]
+teethtooth = (rounded+th-originHeight).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
+teethtooth.nodes[1,:] *= mortiseWidthHack
 
 #### ##    CREATE THE TOOLPATH FOR THE EDGES WITHOUT TEETH:    ## #####
 
@@ -136,7 +150,7 @@ s = np.linspace(0, 1, 1*int(np.ceil((xzmast[0,6]-xzmast[0,0])/offset)))  #  mult
 flat = cnc.PathGrid(xzmast[0,0]+(xzmast[0,6]-xzmast[0,0])*s,
   [np.array([[-edgeHalfLen,edgeHalfLen],2*[xzmast[1,0]+(xzmast[1,6]-xzmast[1,0])*sval]]) for sval in s])   #   HIPPO
 # cutpath = flat.castToMold(ballrad, ctol, np.NINF)
-flattooth = (flat+th-20).MultiToolGreedy(th-20, gcodeToolSeq, yinc=True)[0]
+flattooth = (flat+th-originHeight).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
 flattooth = flattooth.afxform(np.array([[0,1,0,0],[-1,0,0,0],[0,0,1,0],[0,0,0,1]]))
 
 
