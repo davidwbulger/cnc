@@ -148,7 +148,7 @@ mortiseWidth = 2.35  #  This should be 2ce the bit radius, but in practice the b
 toothWidth = 2.15
 offset = (mortiseWidth + toothWidth) / cutsPerTooth
 # Make the tooth "shorter" (in the direction normal to the "joint plane" described by xzflat) by this amount:
-brachidont = 0.3
+brachidont = 0.2
 
 if (1-2/cutsPerTooth) * (mortiseWidth+toothWidth) / 2 >= 2*ballrad:
   raise ValueError("These values might give multiple cuts within the mortise.")
@@ -157,27 +157,27 @@ if (1-2/cutsPerTooth) * (mortiseWidth+toothWidth) / 2 >= 2*ballrad:
 edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
 numTeeth = int(np.floor(2*edgeHalfLen*edgePropJoined/(mortiseWidth+toothWidth)))
 v = 0.5*(th-mitreMargin)*(1+(irf/ird)**2)  #  length of vertical (i.e., face-normal) edge of mortise
-# Determine the centre of the arc at the tooth's apex:
-brachshift = (brachidont/np.linalg.norm([ird,irf])) * np.array([ird,irf])
-ctc = (np.array([irf*(1-mitreMargin/ird), -th+mitreMargin+v])  #  mirror image of nadir of mortise
-  - ballrad * np.array([1, irf/ird])  #  centre of circle tangent to edges of mortise's mirror image
-  - brachshift)  #  shorten tooth for fit tolerance
-toothBaseShrink = brachshift[0] * np.array([-1,ird/irf])  #  shift of tenon's base vertex relative to mortise's
 rho = np.linspace(2*np.arctan(irf/ird), 0, 8)
 
 xzflat = np.vstack((irf*(1-np.array([th+2*ballrad,-2*ballrad])/ird), np.array([2*ballrad,-th-2*ballrad])))
 xzdown = np.vstack((irf*(1-np.array([th+2*ballrad,th,th,mitreMargin,-2*ballrad])/ird),
   np.array([2*ballrad,0,-v,-th+mitreMargin,-th-2*ballrad])))
-xzup = np.column_stack((xzdown[:,0], xzdown[:,1]-toothBaseShrink,
-  ctc[:,None] + ballrad*np.vstack((np.cos(rho), np.sin(rho))),
-  xzdown[:,3]+toothBaseShrink, xzdown[:,4]))
-xzup[0,-3] = min(xzup[0,-3:])  #  since otherwise numerical error could spoil non-decreasingness
+xzup = [None] * (cutsPerTooth//2)
+for k in range(cutsPerTooth//2):
+  extraShortening = np.sqrt((mortiseWidth/2)**2-(offset*(k-(cutsPerTooth//4)))**2)  #  to round the edge of the tooth
+  # Determine the centre of the arc at the tooth's apex:
+  brachshift = ((brachidont+extraShortening)/np.linalg.norm([ird,irf])) * np.array([ird,irf])
+  ctc = (np.array([irf*(1-mitreMargin/ird), -th+mitreMargin+v])  #  mirror image of nadir of mortise
+    - ballrad * np.array([1, irf/ird])  #  centre of circle tangent to edges of mortise's mirror image
+    - brachshift)  #  shorten tooth for fit tolerance
+  toothBaseShrink = brachshift[0] * np.array([-1,ird/irf])  #  shift of tenon's base vertex relative to mortise's
+  xzup[k] = np.column_stack((xzdown[:,0], xzdown[:,1]-toothBaseShrink,
+    ctc[:,None] + ballrad*np.vstack((np.cos(rho), np.sin(rho))),
+    xzdown[:,3]+toothBaseShrink, xzdown[:,4]))
+  xzup[k][0,-3] = min(xzup[k][0,-3:])  #  since otherwise numerical error could spoil non-decreasingness
 
 numCornerCuts = int(np.ceil(edgeHalfLen/offset-(cutsPerTooth//2)*numTeeth))
-xz= [xzflat]*numCornerCuts+([xzup]*(cutsPerTooth//2)+[xzdown]*(cutsPerTooth//2))*numTeeth+[xzflat]*numCornerCuts
-xz = ([xzflat]*numCornerCuts
-  + ([xzflat]*((cutsPerTooth-2)//4) +[xzup] +[xzflat]*((cutsPerTooth-2)//4) +[xzdown]*(cutsPerTooth//2)) *numTeeth
-  + [xzflat]*numCornerCuts)
+xz = ([xzflat] * numCornerCuts + (xzup + [xzdown] * (cutsPerTooth//2)) * numTeeth + [xzflat] * numCornerCuts)
 maxAbsY = offset*0.5*(len(xz)-1)
 y = np.linspace(-maxAbsY, maxAbsY, len(xz))
 teethtooth = (cnc.PathGrid(y,xz)+(th-originHeight)).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
