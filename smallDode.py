@@ -18,42 +18,34 @@ rf = 57 # 67  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 originHeight = 20
 
-# gcodeToolSeq = [{'bitrad':1.5-glueGapHack,'cude':3,'ds':3},{'bitrad':0.5-glueGapHack,'cude':0.7,'ds':1}]
-
-edgePropJoined = 0.9  #  max proportion of edge used for finger joint
-mitreMargin = 1  #  vertically, for simplicity
-
 boolPlot = False
 
 ## TOOTH WIDTH/SHAPE STUFF:
 
-# After a failed first try (I believe due to numerical precision errors) I'm now fixing the tooth width as the width of the drill bit---essentially. The
-# true bit width will be the mortisse width, and the tooth width will be slightly smaller, with the difference determined by glueGapHack.
+# After a failed first try (I believe due to numerical precision errors) I'm now fixing the tooth width as the width of the drill
+# bit---essentially. The true bit width will be the mortisse width, and the tooth width will be slightly smaller, with the difference
+# determined by glueGapHack.
 glueGapHack = 0.001 # 0.03
 realBallRad = 1.17  #  it's REALLY 1.0, but this seems to be the half-width of the cut, between teeth at least
 
 # realBallRad = 1.00
-ballrad = 1.0
 # glueGapHack = 0.06 # 0.03
 # mortiseWidthHack = 1.19 # 0.17
 rf = 24
-edgePropJoined = 0.5
-
-cutsPerTooth = 5
 # if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
 
 #### ##    CALCULATED VALUES:    ## #####
 
 ird = rf*np.sqrt((7+3*np.sqrt(5))/8)  # solid inradius to exterior face
 irf = rf*np.cos(np.pi/5)  #  planar inradius to exterior edge
-v = 0.5*(th-mitreMargin)*(1-(irf/ird)**2)
 phi = (1+np.sqrt(5))/2
 
 #### ##    CREATE THE GCODE TO CUT OUT THE BLANKS:    ## #####
 
 # This would be used 12 times to cut pentagonal blanks that are a bit too big.
 
-verts = 0.5*(rf+blankbitrad+excess)*np.array([[phi, np.sqrt(3-phi)], [1-phi,np.sqrt(phi+2)], [-2,0], [1-phi,-np.sqrt(phi+2)], [phi,-np.sqrt(3-phi)]])
+verts = 0.5*(rf+blankbitrad+excess)*np.array([[phi, np.sqrt(3-phi)], [1-phi,np.sqrt(phi+2)], [-2,0], [1-phi,-np.sqrt(phi+2)],
+  [phi,-np.sqrt(3-phi)]])
 bnodes = np.zeros((3,7+6*blankNumPasses))
 bnodes[:,:4] = np.array([[0,0,0],[0,0,5],[*verts[0,:],5],[*verts[0,:],0]]).T
 bnodes[:,-3:] = np.array([[*verts[0,:],5], [0,0,5], [0,0,0]]).T 
@@ -70,14 +62,16 @@ btp.PathToGCode(500, "Blank.gcode")
 
 #### ##    CREATE THE GCODE TO MARK THE SPOILBOARD WITH A PENTAGON FOR POSITIONING:    ## #####
 
-# After cutting the blanks, secure a big piece of spoiler board to the base board and then carve this shallow "guide" into it to help position the first
-# blank. The first joint cut will obliterate the guide, but it will leave an equally effective visual indication of where to put the remaining blanks.
+# After cutting the blanks, secure a big piece of spoiler board to the base board and then carve this shallow "guide" into it to help
+# position the first blank. The first joint cut will obliterate the guide, but it will leave an equally effective visual indication of
+# where to put the remaining blanks.
 
 # Remember:
 #   don't change the XY position from cutting the guide to the end of cutting ALL blanks' edges;
 #   manually select grain orientation for 2JE, 3JE and 4JE blanks (joint edges are anticlockwise starting at right edge).
 
-verts = 0.5*(rf+1.3+excess)*np.array([[phi, np.sqrt(3-phi)], [1-phi,np.sqrt(phi+2)], [-2,0], [1-phi,-np.sqrt(phi+2)], [phi,-np.sqrt(3-phi)]])
+verts = 0.5*(rf+1.3+excess)*np.array([[phi, np.sqrt(3-phi)], [1-phi,np.sqrt(phi+2)], [-2,0], [1-phi,-np.sqrt(phi+2)],
+  [phi,-np.sqrt(3-phi)]])
 bnodes = np.zeros((3,7+6*1))
 bnodes[:,:4] = np.array([[0,0,0],[0,0,5],[*verts[-1,:],5],[*verts[-1,:],0]]).T
 bnodes[:,-3:] = np.array([[*verts[-1,:],5], [0,0,5], [0,0,0]]).T 
@@ -139,13 +133,29 @@ btp.PathToGCode(300, "Guide.gcode")
 # teethtooth.nodes[1,:] *= mortiseWidthHack
 
 # Parameters for tenon & mortise shape:
-v = 0.5*(th-mitreMargin)*(1-(irf/ird)**2)
+edgePropJoined = 0.5 # 0.9  #  max proportion of edge used for finger joint
+mitreMargin = 1  #  vertically, for simplicity
+ballrad = 1.0
+cutsPerTooth = 5
+mortiseWidth = 2.35  #  Ideally this would be twice the bit radius, but in practice the bit carves out a little more.
+toothWidth = 2.15
+brachidont = 0.3  #  Make the tooth "shorter" (in the direction normal to the "joint plane" described by xzflat below) by this amount.
+
+# Calculated values:
+v = 0.5*(th-mitreMargin)*(1-(irf/ird)**2)  #  length of vertical (i.e., face-normal) edge of mortise
+ctc = np.array([irf*(1-mitreMargin/ird), -th+mitreMargin+v])
+
+
 xzflat = np.vstack((irf*(1-np.array([th+2*ballrad,-2*ballrad])/ird), np.array([2*ballrad,-th-2*ballrad])))
 xzdown = np.vstack((irf*(1-np.array([th+2*ballrad,th,th,mitreMargin,-2*ballrad])/ird),
- np.array([2*ballrad,0,-th+mitreMargin+v,-th+mitreMargin,-th-2*ballrad])))
-xzup = 
-np.vstack((irf*(1-np.array([th+2*ballrad,th,mitreMargin,th,mitreMargin,0,-2*ballrad])/ird),
+  np.array([2*ballrad,0,-v,-th+mitreMargin,-th-2*ballrad])))
+
+xzup = np.vstack((irf*(1-np.array([th+2*ballrad,th,mitreMargin,th,mitreMargin,0,-2*ballrad])/ird),
  np.array([2*ballrad,0,-v,-th+mitreMargin+v,-th+mitreMargin,-th,-th-2*ballrad])))  # all nodes used on any path
+breakpoint()
+
+# xzmast = np.vstack((irf*(1-np.array([th+2*ballrad,th,th,mitreMargin,mitreMargin,0,-2*ballrad])/ird),
+#   np.array([2*ballrad,0,-v,-th+mitreMargin+v,-th+mitreMargin,-th,-th-2*ballrad])))  # all nodes used on any path
 
 #### ##    CREATE THE TOOLPATH FOR THE EDGES WITHOUT TEETH:    ## #####
 
