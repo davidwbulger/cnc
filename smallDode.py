@@ -180,7 +180,7 @@ xz = ([xzflat]*numCornerCuts
   + [xzflat]*numCornerCuts)
 maxAbsY = offset*0.5*(len(xz)-1)
 y = np.linspace(-maxAbsY, maxAbsY, len(xz))
-teethtooth = (cnc.PathGrid(y,xz)-originHeight).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
+teethtooth = (cnc.PathGrid(y,xz)+(th-originHeight)).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
 
 #### ##    CREATE THE TOOLPATH FOR THE EDGES WITHOUT TEETH:    ## #####
 
