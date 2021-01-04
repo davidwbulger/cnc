@@ -3,6 +3,8 @@ Work locally in ./cnc.
 To add a new file:
   create the file
   git add [FILENAME]
+  git commit -a -m "[MESSAGE DESCRIBING THE NEW FILE]"
+  git push
 
 After making a change to the code:
   git diff  #  if you forget what you did!
