@@ -137,11 +137,25 @@ teethtooth = (cnc.PathGrid(y,xz)+(th-originHeight)).MultiToolGreedy(th-originHei
 # Actual vertices are [xzmast[0,{0,6}], {+,-}edgeHalfLen, xzmast[1,{0,6}].
 # We want the cuts in the long direction, though, so we'll construct this at 90deg & then rotate it back.
 # Thus transformed vertices are [{+,-}edgeHalfLen, xzmast[0,{0,6}], xzmast[1,{0,6}].
-s = np.linspace(0, 1, 1*int(np.ceil((xzflat[0,1]-xzflat[0,0])/offset)))
 
+s = np.linspace(0, 1, 1*int(np.ceil((xzflat[0,1]-xzflat[0,0])/offset)))
 flat = cnc.PathGrid(xzflat[0,0]+(xzflat[0,1]-xzflat[0,0])*s,
   [np.array([[-edgeHalfLen,edgeHalfLen],2*[xzflat[1,0]+(xzflat[1,1]-xzflat[1,0])*sval]]) for sval in s])
-flattooth = (flat+th-originHeight).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
+flattooth = (flat+th-originHeight+0.8*gcodeToolSeq[0]['cude']
+  ).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
+# flattooth = (flat+th-originHeight).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
+
+# This edit is intended to cut the final pass of the flat edges with a finer offset, to get them smoother. Using
+# the finer offset all along is unnecessarily slow.
+s = np.linspace(0, 1, 1*int(np.ceil((xzflat[0,1]-xzflat[0,0])*(3/offset))))
+flat = cnc.PathGrid(xzflat[0,0]+(xzflat[0,1]-xzflat[0,0])*s,
+  [np.array([[-edgeHalfLen,edgeHalfLen],2*[xzflat[1,0]+(xzflat[1,1]-xzflat[1,0])*sval]]) for sval in s])
+
+finerToolSeq = [{k:(40 if k=='cude' else v) for (k,v) in gcodeToolSeq[0].items()}]
+finerflattooth = (flat+th-originHeight
+  ).MultiToolGreedy(th-originHeight, finerToolSeq, yinc=True)[0]
+flattooth = cnc.catToolPaths([flattooth, finerflattooth])
+
 flattooth = flattooth.afxform(np.array([[0,1,0,0],[-1,0,0,0],[0,0,1,0],[0,0,0,1]]))
 
 
