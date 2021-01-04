@@ -4,38 +4,46 @@ import cnc
 import numpy as np
 import matplotlib.pyplot as plt
 
-# This will create five separate gcode files:
+# This will create six separate gcode files:
 #   Blank.gcode: cuts a blank, using a wider drill bit
-
+#   Guide.gcode: cuts a shallow line for positioning the blank for the next four programs
+#   SDFace2.gcode to SDFace5.gcode: cuts the edges onto a blank
+# Note that the four programs SDFace#.gcode assume a starting position that's 20mm above the centre of the bottom
+# of the pentagonal panel (so, 11mm above the top of the panel, if it's exactly 9mm thick).
 
 ##################################################################################################################
 #### ##    PARAMETERS:    ## #####
 ##################################################################################################################
 
+# Blank stuff (not really used, in the end):
 blankCutDepth = 6 # 14  #  board seems to be 10mm, and bit radius is 3mm; this is 1mm extra
 blankNumPasses = 3 # 3
 blankbitrad = 1 # 3
 excess = 0 # 2  #  excess, in mm, around the margin of the pentagon blanks cut in rough phase
-rf = 57 # 67  #  planar exradius of face at outside [see Appendix A]
+
+# Main programs (SDFace#.gcode) stuff:
+rf = 67  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 originHeight = 20
 ballrad = 1.0
 gcodeToolSeq = [{'bitrad':ballrad,'cude':1.5,'ds':1}]
 
+# Parameters for tenon & mortise shape:
+edgePropJoined = 0.9  #  max proportion of edge used for finger joint
+mitreMargin = 1  #  vertically, for simplicity
+cutsPerTooth = 6
+if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
+mortiseWidth = 2.35  #  This should be 2ce the bit radius, but in practice the bit carves out a little more.
+toothWidth = 2.15
+# Make the tooth "shorter" (in the direction normal to the "joint plane" described by xzflat) by this amount:
+brachidont = 0.4
+if (1-2/cutsPerTooth) * (mortiseWidth+toothWidth) / 2 >= 2*ballrad:
+  raise ValueError("These values might give multiple cuts within the mortise.")
+toothRoundingFactor = 1.9  #  I don't know why 1.0 doesn't work, but this seems better.
+
 boolPlot = False
 
 ## TOOTH WIDTH/SHAPE STUFF:
-
-# After a failed first try (I believe due to numerical precision errors) I'm now fixing the tooth width as the
-# width of the drill bit---essentially. The true bit width will be the mortisse width, and the tooth width will be
-# slightly smaller, with the difference determined by glueGapHack.
-glueGapHack = 0.001 # 0.03
-realBallRad = 1.17  #  it's REALLY 1.0, but this seems to be the half-width of the cut, between teeth at least
-
-# realBallRad = 1.00
-# glueGapHack = 0.06 # 0.03
-# mortiseWidthHack = 1.19 # 0.17
-rf = 24
 
 #### ##    CALCULATED VALUES:    ## #####
 
@@ -93,67 +101,8 @@ btp.PathToGCode(300, "Guide.gcode")
 #### ##    CREATE THE TOOLPATH FOR THE EDGES WITH TEETH:    ## #####
 ##################################################################################################################
 
-# ## Tooth width/shape stuff:
-# # We'll tell the cnc module that this is the bit radius, to persuade it to leave room for glue:
-# ballrad = realBallRad-glueGapHack
-# xzmast = np.vstack((irf*(1-np.array([th+2*ballrad,th,mitreMargin,th,mitreMargin,0,-2*ballrad])/ird),
-#   np.array([2*ballrad,0,-v,-th+mitreMargin+v,-th+mitreMargin,-th,-th-2*ballrad])))  # all nodes used on any path
-# gcodeToolSeq = [{'bitrad':ballrad,'cude':1.5,'ds':1}]
-# toothWidth= mortiseWidthHack*(2*realBallRad-1.9*glueGapHack) # 2*(rBR-gGH) would be "perfect"; this leaves a tol
-# edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
-# numTeeth = int(np.floor(edgeHalfLen*edgePropJoined/toothWidth))
-# 
-# # Update offset for integer number of cuts per tooth (ACTUAL offset, not hacked for mortise width):
-# offset = 2*toothWidth/cutsPerTooth
-# xzflat = xzmast[:,[0,6]]        #  the straight paths (near the corners)
-# xzup = xzmast[:,[0,1,2,4,6]]    #  the tenons (or "teeth" or "fingers")
-# xzdown = xzmast[:,[0,1,3,4,6]]  #  the mortises
-# 
-# numCornerCuts = int(np.ceil(edgeHalfLen/offset-(cutsPerTooth//2)*numTeeth))
-# xz= [xzflat]*numCornerCuts+([xzup]*(cutsPerTooth//2)+[xzdown]*(cutsPerTooth//2))*numTeeth+[xzflat]*numCornerCuts
-# maxAbsY = offset*0.5*(len(xz)-1) / mortiseWidthHack
-# y = np.linspace(-maxAbsY, maxAbsY, len(xz))
-# 
-# # Figure out how to "flip" the joint edge:
-# # [Note: this geometry is specific to this oblique joint, so it's not suitable for cnc.py.]
-# slopedir = xzmast[:,0]-xzmast[:,4]
-# slopedir = slopedir / np.linalg.norm(slopedir)
-# M = 2*np.outer(slopedir,slopedir)-np.identity(2)
-# moff = xzmast[:,4,None] - np.matmul(M,xzmast[:,4,None])
-# 
-# # Set up the loop to ensure the joint edge is round and meets:
-# rounded = cnc.PathGrid(y,xz)
-# ctol=0.03
-# abserr=ctol+1
-# while abserr > ctol:
-#   flipt = cnc.PathGrid(rounded.y, [moff+np.matmul(M,tp) for tp in reversed(rounded.xz)])
-#   roundabove = rounded.roundJoint(ballrad,ctol)
-#   roundbelow = flipt.roundJoint(ballrad,ctol)
-#   # roundabove = rounded.castToMold(ballrad,ctol).moldToCast(ballrad,ctol)
-#   # roundbelow = flipt.castToMold(ballrad,ctol).moldToCast(ballrad,ctol)
-#   abserr = (roundabove-roundbelow).maxabs()
-#   rounded = 0.5 * (roundabove + roundbelow)
-#   # rounded = roundabove.min(roundbelow)  #  elementwise min of two PathGrids
-# breakpoint()
-# 
-# teethtooth = (rounded+th-originHeight).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
-# teethtooth.nodes[1,:] *= mortiseWidthHack
-
-# Parameters for tenon & mortise shape:
-edgePropJoined = 0.5 # 0.9  #  max proportion of edge used for finger joint
-mitreMargin = 1  #  vertically, for simplicity
-cutsPerTooth = 6
-if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
-mortiseWidth = 2.35  #  This should be 2ce the bit radius, but in practice the bit carves out a little more.
-toothWidth = 2.15
-offset = (mortiseWidth + toothWidth) / cutsPerTooth
-# Make the tooth "shorter" (in the direction normal to the "joint plane" described by xzflat) by this amount:
-brachidont = 0.4
-
-if (1-2/cutsPerTooth) * (mortiseWidth+toothWidth) / 2 >= 2*ballrad:
-  raise ValueError("These values might give multiple cuts within the mortise.")
-
 # Calculated values:
+offset = (mortiseWidth + toothWidth) / cutsPerTooth
 edgeHalfLen = rf*np.sin(np.pi/5)  #  exact at exterior (bottom) face
 numTeeth = int(np.floor(2*edgeHalfLen*edgePropJoined/(mortiseWidth+toothWidth)))
 v = 0.5*(th-mitreMargin)*(1+(irf/ird)**2)  #  length of vertical (i.e., face-normal) edge of mortise
@@ -164,15 +113,16 @@ xzdown = np.vstack((irf*(1-np.array([th+2*ballrad,th,th,mitreMargin,-2*ballrad])
   np.array([2*ballrad,0,-v,-th+mitreMargin,-th-2*ballrad])))
 xzup = [None] * (cutsPerTooth//2)
 for k in range(cutsPerTooth//2):
-  extraShortening = mortiseWidth/2 - np.sqrt((mortiseWidth/2)**2-(offset*(k-(cutsPerTooth//4)))**2)  #  to round the edge of the tooth
+  # The following variable round's the tooth's edge by reducing its height away from its central ridge:
+  extraShortening = mortiseWidth/2 - np.sqrt((mortiseWidth/2)**2-(offset*(k-(cutsPerTooth//4)))**2)
   # Determine the centre of the arc at the tooth's apex:
   brachshift = ((brachidont+extraShortening)/np.linalg.norm([ird,irf])) * np.array([ird,irf])
   ctc = (np.array([irf*(1-mitreMargin/ird), -th+mitreMargin+v])  #  mirror image of nadir of mortise
-    - 1.8*ballrad * np.array([1, irf/ird])  #  centre of circle tangent to edges of mortise's mirror image
+    - toothRoundingFactor*ballrad * np.array([1, irf/ird])  #  centre of circ tangt to mortise reflection's ridge
     - brachshift)  #  shorten tooth for fit tolerance
   toothBaseShrink = brachshift[0] * np.array([-1,ird/irf])  #  shift of tenon's base vertex relative to mortise's
   xzup[k] = np.column_stack((xzdown[:,0], xzdown[:,1]-toothBaseShrink,
-    ctc[:,None] + 1.8*ballrad*np.vstack((np.cos(rho), np.sin(rho))),
+    ctc[:,None] + toothRoundingFactor*ballrad*np.vstack((np.cos(rho), np.sin(rho))),
     xzdown[:,3]+toothBaseShrink, xzdown[:,4]))
   xzup[k][0,-3] = min(xzup[k][0,-3:])  #  since otherwise numerical error could spoil non-decreasingness
 
@@ -216,9 +166,6 @@ for numJointEdges in [2,3,4,5]:
     cnc.hackaspect(ax)
     plt.show()
   alltooth.PathToGCode(300, f"SDFace{numJointEdges}.gcode")
-  if numJointEdges==2:
-    oops = cnc.ToolPath(alltooth.nodes * np.array([[1],[-1],[1]]), alltooth.taxis)
-    oops.PathToGCode(300, "Oops.gcode")
 
 # Actually rotate these into position to look at the geometry of the equatorial clamping jig.
 
