@@ -33,10 +33,10 @@ edgePropJoined = 0.9  #  max proportion of edge used for finger joint
 mitreMargin = 1  #  vertically, for simplicity
 cutsPerTooth = 6
 if cutsPerTooth%4 != 2: raise ValueError("cutsPerTooth must be twice an odd number.")
-mortiseWidth = 2.35  #  This should be 2ce the bit radius, but in practice the bit carves out a little more.
-toothWidth = 2.15
+mortiseWidth = 2.3#5  #  This should be 2ce the bit radius, but in practice the bit carves out a little more.
+toothWidth = 2.1#5
 # Make the tooth "shorter" (in the direction normal to the "joint plane" described by xzflat) by this amount:
-brachidont = 0.4
+brachidont = 0.5#4
 if (1-2/cutsPerTooth) * (mortiseWidth+toothWidth) / 2 >= 2*ballrad:
   raise ValueError("These values might give multiple cuts within the mortise.")
 toothRoundingFactor = 1.9  #  I don't know why 1.0 doesn't work, but this seems better.
@@ -113,7 +113,7 @@ xzdown = np.vstack((irf*(1-np.array([th+2*ballrad,th,th,mitreMargin,-2*ballrad])
   np.array([2*ballrad,0,-v,-th+mitreMargin,-th-2*ballrad])))
 xzup = [None] * (cutsPerTooth//2)
 for k in range(cutsPerTooth//2):
-  # The following variable round's the tooth's edge by reducing its height away from its central ridge:
+  # The following variable rounds the tooth's edge by reducing its height away from its central ridge:
   extraShortening = mortiseWidth/2 - np.sqrt((mortiseWidth/2)**2-(offset*(k-(cutsPerTooth//4)))**2)
   # Determine the centre of the arc at the tooth's apex:
   brachshift = ((brachidont+extraShortening)/np.linalg.norm([ird,irf])) * np.array([ird,irf])
@@ -128,6 +128,7 @@ for k in range(cutsPerTooth//2):
 
 numCornerCuts = int(np.ceil(edgeHalfLen/offset-(cutsPerTooth//2)*numTeeth))
 xz = ([xzflat] * numCornerCuts + (xzup + [xzdown] * (cutsPerTooth//2)) * numTeeth + [xzflat] * numCornerCuts)
+xz[numCornerCuts] = xzflat  #  narrow that first tooth, since it's misshapen by the lack of an adjacent mortise
 maxAbsY = offset*0.5*(len(xz)-1)
 y = np.linspace(-maxAbsY, maxAbsY, len(xz))
 teethtooth = (cnc.PathGrid(y,xz)+(th-originHeight)).MultiToolGreedy(th-originHeight, gcodeToolSeq, yinc=True)[0]
@@ -180,6 +181,14 @@ for numJointEdges in [2,3,4,5]:
     cnc.hackaspect(ax)
     plt.show()
   alltooth.PathToGCode(300, f"SDFace{numJointEdges}.gcode")
+
+# TO RESUME A CUT:
+numJointEdges = 2
+skipEdges = 1
+edgeList = (list(teethtooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges))
+  + list(flattooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges,5)))
+alltooth = cnc.catToolPaths(edgeList[skipEdges:])
+alltooth.PathToGCode(300, "resumeCut.gcode")
 
 # Actually rotate these into position to look at the geometry of the equatorial clamping jig.
 
