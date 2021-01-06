@@ -184,7 +184,7 @@ for numJointEdges in [2,3,4,5]:
 
 # TO RESUME A CUT:
 numJointEdges = 2
-skipEdges = 1
+skipEdges = 4
 edgeList = (list(teethtooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges))
   + list(flattooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges,5)))
 alltooth = cnc.catToolPaths(edgeList[skipEdges:])
