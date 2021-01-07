@@ -1,20 +1,20 @@
 # create g-code for clamps for dode
 
 import cnc
-import sys
 import numpy as np
 
 # This creates a gcode file to cut a clamping jig layer (presumably out of mdf).
-if len(sys.argv) != 3:  #  number of parameters, + 1 for "dodeClamps.py"
-  print("Usage: python dodeClamps.py rf mdfDepth hiZ ballrad offset")
-  print("  rf       = planar exradius of exterior faces")
-  print("  mdfDepth = depth of the stock we're cutting the jig layer from")
-  print("  hiZ      = upper end of the range of Z coordinates this layer will clamp")
-  print("  ballrad  = radius of ball-end bit cutting the clamp")
-  print("  offset   = offset between cuts")
-  print("If mdfDepth>hiZ then it's an end clamp, so cut bottom as well as sides."
-else:
-  do the thing
+
+# PARAMETERS:
+cude = 4  #  safe cutting depth for a single pass
+offset = 2
+feedrate = 800
+stockdepth = 20
+rf = 67
+parity = 0
+
+
+# 
 
 ##################################################################################################################
 #####     APPENDIX A:  VERTICES' COORDINATES     #################################################################
