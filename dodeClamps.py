@@ -7,14 +7,50 @@ import numpy as np
 
 # PARAMETERS:
 cude = 4  #  safe cutting depth for a single pass
-offset = 2
-feedrate = 800
-stockdepth = 20
+ballrad = 3.0
+offset = 3.0
+feedrate = 600
+cutdepth = 55
 rf = 67
-parity = 0
 
+# FIRSTLY, ROUGHLY CUT THE FACES:
+phi = 0.5+np.sqrt(1.25)
+pentag = 0.5*np.array([[phi,1-phi,-2,1-phi,phi],
+  [np.sqrt(3-phi),np.sqrt(phi+2),0,-np.sqrt(phi+2),-np.sqrt(3-phi)],
+  [0,0,0,0,0]]).T  #  facial planar exradius = 1
+verts = np.vstack((rf*pentag-np.array([[0,0,cutdepth]]), (rf+cutdepth*(phi-1))*pentag))
+verts += np.random.normal(scale=1e-6,size=verts.shape)
 
-# 
+pt = cnc.polyTri(facets=np.empty((0,3,3)))
+pt.addConvexPolygon(verts[:5,:])
+pt.addConvexPolygon(verts[[0,1,6,5],:])
+pt.addConvexPolygon(verts[[1,2,7,6],:])
+pt.addConvexPolygon(verts[[2,3,8,7],:])
+pt.addConvexPolygon(verts[[3,4,9,8],:])
+pt.addConvexPolygon(verts[[4,0,5,9],:])
+
+pg = pt.toPG(offset)
+tp0 = pg.MultiToolGreedy(0,[{'bitrad':ballrad,'cude':cude,'ds':1}], yinc=True)[0]
+
+# NOW CUT TO THE SLOPING EDGES (star pattern to avoid collisions):
+nodes = np.zeros((3,1))  #  origin
+nodes = np.hstack((nodes, (verts.T)[:,[2,7,4,9,1,6,3,8,0,5]]))
+taxis = np.array([range(10),5*[0,1]])
+
+# NOW ADD A FINER PASS:
+shrinkage = 2/phi*ballrad*np.sin(0.5*np.arctan(2)) # reduce tooltip exradius to account for bit radius
+for d in np.arange(0,cutdepth-5,2.0):
+  radius = rf + (d-cutdepth)/phi - shrinkage
+  nodes = np.hstack((nodes, (radius*pentag-np.array([[0,0,d]])).T))
+
+for radius in np.arange(rf,0,-2.0):
+  nodes = np.hstack((nodes, (radius*pentag-np.array([[0,0,cutdepth]])).T))
+
+nodes = np.hstack((nodes, np.array([[0,0],[0,0],[-cutdepth,0]])))
+taxis = np.hstack((taxis,np.array([[nodes.shape[1]-2],[0]])))
+tp1 = cnc.ToolPath(nodes, taxis)
+tp = cnc.catToolPaths([tp0,tp1])
+tp.PathToGCode(600,"clampJig.gcode")
 
 ##################################################################################################################
 #####     APPENDIX A:  VERTICES' COORDINATES     #################################################################
