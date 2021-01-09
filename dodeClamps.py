@@ -6,7 +6,7 @@ import numpy as np
 # This creates a gcode file to cut a clamping jig layer (presumably out of mdf).
 
 # PARAMETERS:
-cude = 4  #  safe cutting depth for a single pass
+cude = 6  #  safe cutting depth for a single pass
 ballrad = 3.0
 offset = 3.0
 feedrate = 600
@@ -40,17 +40,19 @@ taxis = np.array([range(10),5*[0,1]])
 # NOW ADD A FINER PASS:
 shrinkage = 2/phi*ballrad*np.sin(0.5*np.arctan(2)) # reduce tooltip exradius to account for bit radius
 for d in np.arange(0,cutdepth-5,2.0):
-  radius = rf + (d-cutdepth)/phi - shrinkage
+  radius = rf + (cutdepth-d)/phi - shrinkage
   nodes = np.hstack((nodes, (radius*pentag-np.array([[0,0,d]])).T))
 
-for radius in np.arange(rf,0,-2.0):
+for radius in np.arange(rf,0,-1.0):
   nodes = np.hstack((nodes, (radius*pentag-np.array([[0,0,cutdepth]])).T))
 
 nodes = np.hstack((nodes, np.array([[0,0],[0,0],[-cutdepth,0]])))
 taxis = np.hstack((taxis,np.array([[nodes.shape[1]-2],[0]])))
 tp1 = cnc.ToolPath(nodes, taxis)
 tp = cnc.catToolPaths([tp0,tp1])
-tp.PathToGCode(600,"clampJig.gcode")
+tp.PathToGCode(900,"clampJig.gcode")
+
+tp1.PathToGCode(900,"fineJig.gcode")
 
 ##################################################################################################################
 #####     APPENDIX A:  VERTICES' COORDINATES     #################################################################
