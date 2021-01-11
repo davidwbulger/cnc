@@ -26,6 +26,7 @@ rf = 67  #  planar exradius of face at outside [see Appendix A]
 th = 9  #  thickness of board
 originHeight = 20
 ballrad = 1.0
+# "cude"=cutdepth; "ds"=downsapling rate (1 means no downsampling, i.e., cut every path in the grid).
 gcodeToolSeq = [{'bitrad':ballrad,'cude':1.5,'ds':1}]
 
 # Parameters for tenon & mortise shape:
@@ -49,7 +50,7 @@ boolPlot = False
 
 ird = rf*np.sqrt((7+3*np.sqrt(5))/8)  # solid inradius to exterior face
 irf = rf*np.cos(np.pi/5)  #  planar inradius to exterior edge
-phi = (1+np.sqrt(5))/2
+phi = (1+np.sqrt(5))/2  #  the "golden ratio," which appears a lot in the dimensions of a regular dodecahedron)
 
 ##################################################################################################################
 #### ##    CREATE THE GCODE TO CUT OUT THE BLANKS:    ## #####
@@ -182,15 +183,13 @@ for numJointEdges in [2,3,4,5]:
     plt.show()
   alltooth.PathToGCode(300, f"SDFace{numJointEdges}.gcode")
 
-# TO RESUME A CUT:
+# TO RESUME A CUT, IF IT'S INTERRUPTED:
 numJointEdges = 2
 skipEdges = 4
 edgeList = (list(teethtooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges))
   + list(flattooth.afxform(np.linalg.matrix_power(R,e)) for e in range(numJointEdges,5)))
 alltooth = cnc.catToolPaths(edgeList[skipEdges:])
 alltooth.PathToGCode(300, "resumeCut.gcode")
-
-# Actually rotate these into position to look at the geometry of the equatorial clamping jig.
 
 ##################################################################################################################
 #####     APPENDIX A:  VERTICES' COORDINATES     #################################################################

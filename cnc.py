@@ -17,6 +17,11 @@ import bisect
 ####    DEFINE CLASSES:    #######################################################################################
 ##################################################################################################################
 
+# This class stores a triangulated mesh, i.e., the contents of an STL file.
+
+# The constructor can be used in three ways: load an ASCII-format STL file; load a binary format STL file; or
+# just instantiate a triangulated mesh from an array already in memory.
+
 class polyTri:
   # Note that self.facets[i,j,k] is the kth coord of the jth vertex of the ith triangle.
   def __init__(self,fname=None,facets=None):
@@ -128,6 +133,7 @@ class ToolPath:
   #   nodes: a 3xN array of node coordinates.
   #   taxis: a 2xR array of taxis settings, so, e.g., a column [n,0] switches to mode G0 when moving from node n.
   #          Second row should just be 0s & 1s. Require taxis[0,0]=0 so we have a taxis mode at outset.
+  # ("Taxis" here means "mode of motion," i.e., either 0 for "rapid motion" G0, or 1 for feed motion G1.)
 
   def __init__(self, nodes, taxis):
     if nodes[:,[0,-1]].any():
@@ -178,7 +184,6 @@ class ToolPath:
     fidout.write("%\nO" + progname + "\nG17 G21 G40\n")
     # already at 0 # fidout.write("G00 X0. Y0.\n")
     # Easel automatically pulls bit up to about [0,0,5] before starting. Presumably it moves back to origin.
-    # TEST THIS THOUGH!!!!!!!!!!!!!!!!!!
   
     ## PATHS:
     setfeedrate = False  #  it's not set yet. The machine should be told the rate on the 1st G01.
@@ -195,7 +200,6 @@ class ToolPath:
         fidout.write("\n")
 
     ## FOOTER:
-    # fidout.write("G0 Z5.\nM30\n%%\n")  #  retract 5mm
     fidout.write("M30\n%%\n")
     fidout.close()
 
@@ -317,7 +321,7 @@ class PathGrid:
     # segment[:,0] to segment[:,1].
     # segment[1,:] = np.maximum(self.y[0], np.minimum(self.y[-1], segment[1,:]))
     if (segment[1,:]<self.y[0]).any()  or  (segment[1,:]>self.y[-1]).any():
-      # raise PathGridError("In maxoseg(PG,seg), seg's Y range exceeds PG's, so, ah ... I mean ...")
+      # raise PathGridError("In maxoseg(PG,seg), seg's Y range exceeds PG's, which doesn't make sense....")
       return 2  #  not ideal
     yk = np.sum(self.y<=np.min(segment[1,:])) - 1  #  index of lowest relevant y value in PathGrid
     yK = len(self.y) - np.sum(self.y>=np.max(segment[1,:]))  #  index of highest relevant y value in PathGrid
@@ -773,7 +777,8 @@ def xlate(x,y):
   return np.array([[1, 0, 0, x], [0, 1, 0, y], [0, 0, 1, 0], [0, 0, 0, 1]])
 
 def hackaspect(ax):
-  # add a bounding box to force the aspect ratio to be 1:1:1
+  # add a bounding box to force the aspect ratio to be 1:1:1 in plotted images (probably unnecessary, since Easel
+  # has a better plotting interface anyway).
   xl = ax.get_xlim()
   yl = ax.get_ylim()
   zl = ax.get_zlim()
