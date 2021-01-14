@@ -6,7 +6,6 @@ from scipy import ndimage
 from skimage import io
 from skimage.morphology import skeletonize
 import matplotlib.pyplot as plt
-from skimage.util import invert
 
 image = io.imread("mousepad.jpg", as_gray=True).astype(float) < 0.5
 # Note: coords are array-style: [vert from top, horz from left]
@@ -29,11 +28,16 @@ fig.canvas.flush_events()  #  plt.show()
 # get strokewidth:
 sw = ndimage.distance_transform_edt(image) * skeleton
 
-bam = 2.5  #  bit-angle multiplier; ratio of depth of cut to width of cut
+# bam = 2.5  #  placeholder guess
+vBitAngle = 20  #  in degrees ; probably need a less acute bit
+bam = 0.5/np.tan(vBitAngle*np.pi/360)  #  bit-angle multiplier; ratio of depth of cut to width of cut
+
 outputWidth = 200  #  width of desired output, in millimetres
+orht = 5  #  start with bit 5mm above surface
 scale = outputWidth/K  #  millimetres per pixel
 (X,Y) = np.meshgrid(scale*np.arange(K), scale*np.arange(J)[::-1])
 Z = -sw * (scale * bam)
+Z = (Z-orht) * (Z!=0)  #  shifts cuts downward so that the origin/safe-height can be a little higher
 numToDo = np.sum(Z<0)  #  number of pixels needing cutting that remain to be scheduled
 XYZ = np.stack((X,Y,Z),2)
 toDo = (Z<0)
@@ -87,36 +91,16 @@ while numToDo>0:
   fig.canvas.flush_events()  #  plt.draw()
   print(numToDo)
 
-"""
-path = np.zeros((3,0))
-for ii in range(numToDo):
-  # Find a nearby place to start a cutpath:
-  searchRadius = 1  #  in the supremum norm
-  while not Z[curpos]:
-    searchRadius *= 2
-    searchBlock = np.array([[max(0,curpos[0]-searchRadius), max(0,curpos[1]-searchRadius)],
-      [min(J-1,curpos[0]+searchRadius), min(K-1,curpos[1]+searchRadius)]])
-    zMinRelLoc = (
-      np.unravel_index(Z[searchBlock[0,0]:(1+searchBlock[1,0]), searchBlock[0,1]:(1+searchBlock[1,1])].argmin(),
-      diff(searchBlock,axis=0)[0]+1))
-    if curpos[0]-searchRadius >= 0 and np.any(Z[curpos[0]-searchRadius, 
-  
-if False:
-  # display results
-  fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(8, 4),
-                           sharex=True, sharey=True)
-  
-  ax = axes.ravel()
-  
-  ax[0].imshow(image, cmap=plt.cm.gray)
-  ax[0].axis('off')
-  ax[0].set_title('original', fontsize=20)
-  
-  ax[1].imshow(skeleton, cmap=plt.cm.gray)
-  ax[1].axis('off')
-  ax[1].set_title('skeleton', fontsize=20)
-  
-  fig.tight_layout()
-  plt.show()
-
-"""
+print("All the paths have been found. Writing the gcode...")
+# prenodes = ([0,0,0],
+#   (np.row_stack(([X[tuple(path[0])],Y[tuple(path[0])],0], XYZ[tuple(np.array(path).T)],
+#   [X[tuple(path[-1])],Y[tuple(path[-1])],0])) for path in paths),
+#   [0,0,0])
+# breakpoint()
+nodes = np.row_stack(([0,0,0],) +
+  tuple(np.row_stack(([X[tuple(path[0])],Y[tuple(path[0])],0], XYZ[tuple(np.array(path).T)],
+  [X[tuple(path[-1])],Y[tuple(path[-1])],0])) for path in paths) +
+  ([0,0,0],)).T
+taxis = np.row_stack((np.insert(np.cumsum([k for path in paths for k in (2,len(path))])-1,0,0),
+  np.arange(2*len(paths)+1)%2))
+cnc.ToolPath(nodes,taxis).PathToGCode(1200,"Mousepad.gcode")
