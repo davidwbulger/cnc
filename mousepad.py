@@ -7,7 +7,18 @@ from skimage import io
 from skimage.morphology import skeletonize
 import matplotlib.pyplot as plt
 
-image = io.imread("mousepad.jpg", as_gray=True).astype(float) < 0.5
+# PARAMETERS:
+imfile = "mousepad.jpg"
+outputWidth = 200  #  width of desired output, in millimetres
+orht = 5  #  start with bit 5mm above surface
+outfile = "Mousepad.gcode"
+
+imfile = "detail.jpg"
+outputWidth = 30  #  width of desired output, in millimetres
+orht = 5  #  start with bit 5mm above surface
+outfile = "Detail.gcode"
+
+image = io.imread(imfile, as_gray=True).astype(float) < 0.5
 # Note: coords are array-style: [vert from top, horz from left]
 (J,K) = image.shape
 
@@ -15,25 +26,21 @@ image = io.imread("mousepad.jpg", as_gray=True).astype(float) < 0.5
 print("Skeletonising...")
 skeleton = skeletonize(image)
 
-# (labeled, numComps) = ndimage.label(skeleton, structure=np.ones((3,3)))
-
 plt.ion()
 (fig, ax) = plt.subplots(figsize=(9, 9))
 ax.imshow(skeleton)
 ax.set_xticks([]), ax.set_yticks([])
 ax.axis([0, image.shape[1], image.shape[0], 0])
-# ax.plot([10,1000],[500,1500],'-b', lw=3)
-fig.canvas.flush_events()  #  plt.show()
+fig.canvas.flush_events()
 
 # get strokewidth:
 sw = ndimage.distance_transform_edt(image) * skeleton
 
-# bam = 2.5  #  placeholder guess
-vBitAngle = 20  #  in degrees ; probably need a less acute bit
+# Note: vBitAngle is the dihedral angle between the two sides of a groove cut by the bit, i.e., TWICE
+# the angle between a groove wall (or bit edge) and the vertical.
+vBitAngle = 60  #  in degrees ; probably need a less acute bit
 bam = 0.5/np.tan(vBitAngle*np.pi/360)  #  bit-angle multiplier; ratio of depth of cut to width of cut
 
-outputWidth = 200  #  width of desired output, in millimetres
-orht = 5  #  start with bit 5mm above surface
 scale = outputWidth/K  #  millimetres per pixel
 (X,Y) = np.meshgrid(scale*np.arange(K), scale*np.arange(J)[::-1])
 Z = -sw * (scale * bam)
@@ -103,4 +110,4 @@ nodes = np.row_stack(([0,0,0],) +
   ([0,0,0],)).T
 taxis = np.row_stack((np.insert(np.cumsum([k for path in paths for k in (2,len(path))])-1,0,0),
   np.arange(2*len(paths)+1)%2))
-cnc.ToolPath(nodes,taxis).PathToGCode(1200,"Mousepad.gcode")
+cnc.ToolPath(nodes,taxis).PathToGCode(1200,outfile)
