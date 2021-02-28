@@ -181,7 +181,8 @@ class ToolPath:
     fidout = open(fname, 'w')
   
     ## HEADER:
-    fidout.write("%\nO" + progname + "\nG17 G21 G40\n")
+    # fidout.write("%\nO" + progname + "\nG17 G21 G40\n")
+    fidout.write("G21\nG90\n")
     # already at 0 # fidout.write("G00 X0. Y0.\n")
     # Easel automatically pulls bit up to about [0,0,5] before starting. Presumably it moves back to origin.
   
@@ -200,7 +201,7 @@ class ToolPath:
         fidout.write("\n")
 
     ## FOOTER:
-    fidout.write("M30\n%%\n")
+    fidout.write("M30\n")
     fidout.close()
 
   def plot(self, ax, color='black', linewidth=1):

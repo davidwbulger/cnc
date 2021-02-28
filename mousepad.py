@@ -9,14 +9,20 @@ import matplotlib.pyplot as plt
 
 # PARAMETERS:
 imfile = "mousepad.jpg"
-outputWidth = 200  #  width of desired output, in millimetres
-orht = 5  #  start with bit 5mm above surface
-outfile = "Mousepad.gcode"
+outputWidth = 172  #  width of desired output, in millimetres
+orht = 0  #  start with bit this many mm above surface
+outfile = "Mousepad.gcode"  #  widest point is about 72 pixels
+vBitAngle = 60  #  bit angle in degrees
+vBitWidth = 3.175
 
 imfile = "detail.jpg"
-outputWidth = 30  #  width of desired output, in millimetres
-orht = 5  #  start with bit 5mm above surface
+outputWidth = 24  #  width of desired output, in millimetres
+orht = 0  #  start with bit this many mm above surface
 outfile = "Detail.gcode"
+vBitAngle = 60  #  bit angle in degrees
+vBitWidth = 3.175
+
+sfht = 3  #  3 mm ain't much but ought to suffice
 
 image = io.imread(imfile, as_gray=True).astype(float) < 0.5
 # Note: coords are array-style: [vert from top, horz from left]
@@ -38,7 +44,6 @@ sw = ndimage.distance_transform_edt(image) * skeleton
 
 # Note: vBitAngle is the dihedral angle between the two sides of a groove cut by the bit, i.e., TWICE
 # the angle between a groove wall (or bit edge) and the vertical.
-vBitAngle = 60  #  in degrees ; probably need a less acute bit
 bam = 0.5/np.tan(vBitAngle*np.pi/360)  #  bit-angle multiplier; ratio of depth of cut to width of cut
 
 scale = outputWidth/K  #  millimetres per pixel
@@ -104,10 +109,10 @@ print("All the paths have been found. Writing the gcode...")
 #   [X[tuple(path[-1])],Y[tuple(path[-1])],0])) for path in paths),
 #   [0,0,0])
 # breakpoint()
-nodes = np.row_stack(([0,0,0],) +
-  tuple(np.row_stack(([X[tuple(path[0])],Y[tuple(path[0])],0], XYZ[tuple(np.array(path).T)],
-  [X[tuple(path[-1])],Y[tuple(path[-1])],0])) for path in paths) +
-  ([0,0,0],)).T
-taxis = np.row_stack((np.insert(np.cumsum([k for path in paths for k in (2,len(path))])-1,0,0),
+nodes = np.row_stack(([0,0,0],[0,0,sfht]) +
+  tuple(np.row_stack(([X[tuple(path[0])],Y[tuple(path[0])],sfht], XYZ[tuple(np.array(path).T)],
+  [X[tuple(path[-1])],Y[tuple(path[-1])],sfht])) for path in paths) +
+  ([0,0,sfht],[0,0,0])).T
+taxis = np.row_stack((np.insert(np.cumsum([k for path in paths for k in (2,len(path))])-0,0,0),
   np.arange(2*len(paths)+1)%2))
-cnc.ToolPath(nodes,taxis).PathToGCode(1200,outfile)
+cnc.ToolPath(nodes,taxis).PathToGCode(900,outfile)
