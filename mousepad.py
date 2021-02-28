@@ -11,15 +11,13 @@ import matplotlib.pyplot as plt
 imfile = "mousepad.jpg"
 outputWidth = 172  #  width of desired output, in millimetres
 outfile = "Mousepad.gcode"  #  widest point is about 72 pixels
+
+# imfile = "detail.jpg"
+# outputWidth = 24  #  width of desired output, in millimetres
+# outfile = "Detail.gcode"
+
 vBitAngle = 60  #  bit angle in degrees
 vBitWidth = 3.175
-
-imfile = "detail.jpg"
-outputWidth = 24  #  width of desired output, in millimetres
-outfile = "Detail.gcode"
-vBitAngle = 60  #  bit angle in degrees
-vBitWidth = 3.175
-
 sfht = 3  #  3 mm ain't much but ought to suffice
 sanddepth = 0.33333  #  cut this much deeper, so a groove remains after sanding 
 
