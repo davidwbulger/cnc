@@ -136,8 +136,12 @@ class ToolPath:
   # ("Taxis" here means "mode of motion," i.e., either 0 for "rapid motion" G0, or 1 for feed motion G1.)
 
   def __init__(self, nodes, taxis):
-    if nodes[:,[0,-1]].any():
-      raise ToolPathError("First and last node must be the origin.")
+    # if nodes[:,[0,-1]].any():
+    #   raise ToolPathError("First and last node must be the origin.")
+    if nodes[:,0].any():
+      raise ToolPathError("First node must be the origin.")
+    if nodes[:,-1].any():
+      print("Note that the final node is not the origin.")
     if taxis[0,0]!=0 or taxis[0,-1]>=nodes.shape[1]-1 or np.any(np.diff(taxis[0,:])<1):
       raise ToolPathError(
         "Taxis change nodes (first row of taxis) must increase from first node index, stopping before the last.")

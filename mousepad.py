@@ -10,19 +10,18 @@ import matplotlib.pyplot as plt
 # PARAMETERS:
 imfile = "mousepad.jpg"
 outputWidth = 172  #  width of desired output, in millimetres
-orht = 0  #  start with bit this many mm above surface
 outfile = "Mousepad.gcode"  #  widest point is about 72 pixels
 vBitAngle = 60  #  bit angle in degrees
 vBitWidth = 3.175
 
 imfile = "detail.jpg"
 outputWidth = 24  #  width of desired output, in millimetres
-orht = 0  #  start with bit this many mm above surface
 outfile = "Detail.gcode"
 vBitAngle = 60  #  bit angle in degrees
 vBitWidth = 3.175
 
 sfht = 3  #  3 mm ain't much but ought to suffice
+sanddepth = 0.33333  #  cut this much deeper, so a groove remains after sanding 
 
 image = io.imread(imfile, as_gray=True).astype(float) < 0.5
 # Note: coords are array-style: [vert from top, horz from left]
@@ -49,7 +48,8 @@ bam = 0.5/np.tan(vBitAngle*np.pi/360)  #  bit-angle multiplier; ratio of depth o
 scale = outputWidth/K  #  millimetres per pixel
 (X,Y) = np.meshgrid(scale*np.arange(K), scale*np.arange(J)[::-1])
 Z = -sw * (scale * bam)
-Z = (Z-orht) * (Z!=0)  #  shifts cuts downward so that the origin/safe-height can be a little higher
+# Z = (Z-orht) * (Z!=0)  #  shifts cuts downward so that the origin/safe-height can be a little higher
+Z = (Z-sanddepth) * (Z<0)  #  shifts cuts downward so that the origin/safe-height can be a little higher
 numToDo = np.sum(Z<0)  #  number of pixels needing cutting that remain to be scheduled
 XYZ = np.stack((X,Y,Z),2)
 toDo = (Z<0)
@@ -112,7 +112,7 @@ print("All the paths have been found. Writing the gcode...")
 nodes = np.row_stack(([0,0,0],[0,0,sfht]) +
   tuple(np.row_stack(([X[tuple(path[0])],Y[tuple(path[0])],sfht], XYZ[tuple(np.array(path).T)],
   [X[tuple(path[-1])],Y[tuple(path[-1])],sfht])) for path in paths) +
-  ([0,0,sfht],[0,0,0])).T
+  ([0,0,sfht],)).T
 taxis = np.row_stack((np.insert(np.cumsum([k for path in paths for k in (2,len(path))])-0,0,0),
   np.arange(2*len(paths)+1)%2))
 cnc.ToolPath(nodes,taxis).PathToGCode(900,outfile)
