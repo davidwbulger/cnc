@@ -86,11 +86,12 @@ class polyTri:
     # self.facets.extend([verts[[0,j-1,j],:] for j in range(2,verts.shape[0])])
     self.facets = np.concatenate((self.facets, np.stack([verts[[0,j-1,j],:] for j in range(2,verts.shape[0])])))
 
-  def toPG(self, offset, floor=None):
+  def toPG(self, offset, floor=None, xrange=None, yrange=None):
     # Returns a PathGrid corresponding to the upper envelope of the polyTri. Might misbehave for nonconvex shapes.
     if floor is None:
       floor = self.bbox()[2,0]
-    yrange = [np.min(self.facets[:,:,1]), np.max(self.facets[:,:,1])]
+    if yrange is None:
+      yrange = [np.min(self.facets[:,:,1]), np.max(self.facets[:,:,1])]
     ny = int((yrange[1]-yrange[0])/offset) + 1  #  number of y values to use
     y = yrange[0] + (yrange[1]-yrange[0]-offset*(ny-1))/2 + offset*np.arange(ny)
     edgelists = [[] for yp in y]
@@ -123,6 +124,8 @@ class polyTri:
             edge = edge[:,[np.argmin(edge[0,:]),np.argmax(edge[0,:])]]
             el.append(edge)
     xz = [maxEdges(el,offset*0.02,floor) for el in edgelists]
+    if xrange is not None:
+      xz = [xzp[:,np.logical_and(xzp[0,:]>=xrange[0], xzp[0,:]<=xrange[1])] for xzp in xz]
     return PathGrid(y,xz)
 
 ##################################################################################################################
