@@ -67,5 +67,7 @@ if False:
 ##################################################################################################################
 # WRITE THE GCODE:
 if True:
-  tp = pg.SingleToolNoOpt(1)
-  tp.PathToGCode(1000, "steamboat.gcode" if multiplier==1 else f"steamboat{multiplier}.gcode")
+  # tp = pg.SingleToolNoOpt(1)
+  # tp.PathToGCode(1000, "steamboat.gcode" if multiplier==1 else f"steamboat{multiplier}.gcode")
+  tp = pg.SingleToolNoOpt(1, yinc=False)
+  tp.PathToGCode(1000, "steamback.gcode" if multiplier==1 else f"steamback{multiplier}.gcode")

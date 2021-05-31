@@ -470,13 +470,13 @@ class PathGrid:
     for (yp,xzp) in zip(self.y, self.xz):
       ax.plot(xzp[0,:], yp*np.ones(xzp.shape[1]), xzp[1,:], color, linewidth=1)
 
-  def SingleToolNoOpt(self, bitrad):
+  def SingleToolNoOpt(self, bitrad, yinc=True):
     # This directly converts a PathGrid into a corresponding ToolPath, for a single tool only, with no "pacing."
     # The onus is on the user to ensure either that the cutting is shallow enough to be done in one pass, or that
     # this cut is manually re-run from a descending sequence of origins.
-    return self.MultiToolGreedy(0,[{'bitrad':bitrad,'cude':1000,'ds':1}],yinc=True)[0]
+    return self.MultiToolGreedy(0,[{'bitrad':bitrad,'cude':1000,'ds':1}],ymono=True,yinc=yinc)[0]
 
-  def MultiToolGreedy(self, shpaid, toolSeq, yinc=False):
+  def MultiToolGreedy(self, shpaid, toolSeq, ymono=False, yinc=True):
     # This creates a sequence of ToolPaths (one per tool in the provided sequence of ball-end drill bits, of
     # presumably decreasing radius), each working its way down from an initial stockheight, in general via a
     # sequence of not-very-deep cuts. Probably in practice the toolSeq will have length 1 (a single bit) or
@@ -488,7 +488,8 @@ class PathGrid:
     #     bitrad:      RADIUS (NOT DIAMETER) of bit, assumed to be ball-nose
     #     cude:        depth of wood it can remove in each pass
     #     ds:          ('downsample') offset for this tool will be ds times self's offset
-    #   yinc:        if true, this will make cuts in nondescending order of y-coordinate
+    #   ymono:       if true, this will make each cut in the same (usually ascending) order of y-coordinate
+    #   yinc:        if true(false), the first cut will be in a(de)scending order of y-coordinate
 
     # Most of the logic here deals with the first tool in the list. The rest are handled via recursion.
 
@@ -537,8 +538,8 @@ class PathGrid:
         dists = np.row_stack([[np.sum((curpos-seg[:,0,None])**2), np.sum((curpos-seg[:,-1,None])**2)]
           for seg in cutxyz])
         # Now find location in this two column array of the minimum; pop the rowth el of cutxyz; rev if 2nd col:
-        if yinc:
-          locmin = (0,dists[0,:].argmin())
+        if ymono:
+          locmin = (0 if yinc else len(cutxyz)-1,dists[0,:].argmin())
         else:
           locmin = np.unravel_index(dists.argmin(),dists.shape)  #  location of shortest (squared) distance
         nextpath = cutxyz.pop(locmin[0])  #  grab the closest path from the list
