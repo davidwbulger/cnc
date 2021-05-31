@@ -126,7 +126,8 @@ class polyTri:
     xz = [maxEdges(el,offset*0.02,floor) for el in edgelists]
     if xrange is not None:
       xz = [xzp[:,np.logical_and(xzp[0,:]>=xrange[0], xzp[0,:]<=xrange[1])] for xzp in xz]
-    return PathGrid(y,xz)
+    xzgood = [xzp.shape[1]>0 for xzp in xz]
+    return PathGrid(y[xzgood],[xzp for xzp in xz if xzp.shape[1]>0])
 
 ##################################################################################################################
 
