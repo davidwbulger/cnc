@@ -202,7 +202,7 @@ class ToolPath:
       fidout.write(f"G{self.taxis[1,j]} ")  #  set motion mode (cutting or rapid)
       for newpos in self.nodes[:,self.taxis[0,j]+1:(self.taxis[0,j+1]+1 if j<self.taxis.shape[1]-1 else
         self.nodes.shape[1])].T: 
-        fidout.write("X%.2f Y%.2f Z%.2f" % tuple(newpos))
+        fidout.write(("X%.2f Y%.2f Z%.2f" % tuple(newpos)).replace("-0.00","0.00"))
         if self.taxis[1,j] and not setfeedrate:
           fidout.write(" F%d" % feedrate)
           setfeedrate = True

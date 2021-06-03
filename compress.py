@@ -10,13 +10,13 @@ import scipy.stats
 
 ozr = np.array([-5.4821,-2.1783])  #  old z range, in the stl file ("metres")
 mzr = np.array([-2.4,-2.1783])     #  mid z range, for bas-relief compression ("metres")
-nzr = np.array([-8, 0.5])         #  new z range, for the gcode (mm)
+nzr = np.array([-4, 0.5])         #  new z range, for the gcode (mm)
 
 mxr = np.array([-0.32,0.5])
 nxr = np.array([-50,50])
 
 myr = np.array([-0.8,0.8])
-nyr = np.array([15,15+(np.diff(nxr)*np.diff(myr)/np.diff(mxr))[0]])  #  to keep the xy aspect unchanged
+nyr = np.array([5,5+(np.diff(nxr)*np.diff(myr)/np.diff(mxr))[0]])  #  to keep the xy aspect unchanged
 
 multiplier = 1.21
 
@@ -67,7 +67,8 @@ if False:
 ##################################################################################################################
 # WRITE THE GCODE:
 if True:
+  yinc=False
   # tp = pg.SingleToolNoOpt(1)
-  # tp.PathToGCode(1000, "steamboat.gcode" if multiplier==1 else f"steamboat{multiplier}.gcode")
-  tp = pg.SingleToolNoOpt(1, yinc=False)
-  tp.PathToGCode(1000, "steamback.gcode" if multiplier==1 else f"steamback{multiplier}.gcode")
+  # tp.PathToGCode(1800, "steamboat.gcode" if multiplier==1 else f"steamboat{multiplier}.gcode")
+  tp = pg.SingleToolNoOpt(1.3, yinc=yinc)
+  tp.PathToGCode(1800, "steam" + ("boat" if yinc else "back") + f"{multiplier}.gcode")
