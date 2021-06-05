@@ -10,15 +10,17 @@ import scipy.stats
 
 ozr = np.array([-5.4821,-2.1783])  #  old z range, in the stl file ("metres")
 mzr = np.array([-2.4,-2.1783])     #  mid z range, for bas-relief compression ("metres")
-nzr = np.array([-4, 0.5])         #  new z range, for the gcode (mm)
+nzr = np.array([-5, 0.5])         #  new z range, for the gcode (mm)
 
-mxr = np.array([-0.32,0.5])
-nxr = np.array([-50,50])
+mxr = np.array([-0.325,0.5])
+nxr = np.array([0,100])
 
 myr = np.array([-0.8,0.8])
-nyr = np.array([5,5+(np.diff(nxr)*np.diff(myr)/np.diff(mxr))[0]])  #  to keep the xy aspect unchanged
+nyr = np.array([-(5+(np.diff(nxr)*np.diff(myr)/np.diff(mxr))[0]),-5])  #  to keep the xy aspect unchanged
 
 multiplier = 1.21
+
+xdir = True
 
 ##################################################################################################################
 # LOAD AND MANIPULATE:
@@ -35,14 +37,19 @@ scjac = np.array([(nxr[1]-nxr[0])/(mxr[1]-mxr[0]),  #  scale Jacobian
 scint = np.array([nxr[0],nyr[0],nzr[0]]) - np.array([mxr[0],myr[0],mzr[0]]) * scjac  #  scale intercept
 pt.facets = multiplier * (scint[None,None,:] + scjac[None,None,:] * pt.facets)
 
-pt = pt.afxform(np.array([[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]]))
+Af = np.array([[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]])  #  affine transform
+if not xdir:
+  pt = pt.afxform(Af)
 
 print("Final shape:")
 print(pt)
-
 print(-multiplier*nyr[::-1])
 print(multiplier*nxr)
-pg = pt.toPG(0.4,xrange=-multiplier*nyr[::-1],yrange=multiplier*nxr)
+
+if xdir:
+  pg = pt.toPG(0.4,xrange=multiplier*nxr,yrange=multiplier*nyr)
+else:
+  pg = pt.toPG(0.4,xrange=-multiplier*nyr[::-1],yrange=multiplier*nxr)
 
 mx = min([np.min(xzp[0,:]) for xzp in pg.xz])
 Mx = max([np.max(xzp[0,:]) for xzp in pg.xz])
@@ -67,8 +74,11 @@ if False:
 ##################################################################################################################
 # WRITE THE GCODE:
 if True:
-  yinc=False
+  yinc=True
   # tp = pg.SingleToolNoOpt(1)
-  # tp.PathToGCode(1800, "steamboat.gcode" if multiplier==1 else f"steamboat{multiplier}.gcode")
+  # tp.PathToGCode(2400, "steamboat.gcode" if multiplier==1 else f"steamboat{multiplier}.gcode")
   tp = pg.SingleToolNoOpt(1.3, yinc=yinc)
-  tp.PathToGCode(1800, "steam" + ("boat" if yinc else "back") + f"{multiplier}.gcode")
+  if xdir:
+    tp = tp.afxform(Af)
+  tp.PathToGCode(2400, "steam" + ("boat" if yinc else "back")
+    + f"{multiplier}" + ("x" if xdir else "y") + ".gcode")
