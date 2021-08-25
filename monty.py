@@ -11,11 +11,12 @@ pt = pt.afxform(np.diag([1000,1000,1000,1]))
 # print(pt.bbox())
 
 # Do the rough cut:
-pg = pt.toPG(0.6)
-tp = pg.MultiToolGreedy(0, [dict(bitrad=1,cude=2,ds=1)])[0]
+pg = pt.toPG(1.0)
+tp = pg.MultiToolGreedy(0, [dict(bitrad=3.0,cude=3.0,ds=1)])[0]
+# tp = pg.SingleToolNoOpt(3.0)
 tp.PathToGCode(1200, "monty_rough.gcode")
 
 # Do the fine cut:
 pg = pt.toPG(0.3)
-tp = pg.SingleToolNoOpt(0.75)
+tp = pg.SingleToolNoOpt(1.0)
 tp.PathToGCode(1200, "monty_fine.gcode")
