@@ -265,6 +265,16 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
     nodes = nodes[[1,0,2],:]
   ToolPath(nodes, taxis).PathToGCode(feedrate, fname)
 
+def cutPath(x, y, finalDepth, numPasses, feedRate, safeZ, fname):
+  # Utility to cut an x-y path joining 2 or more xy coords to a constant depth.
+
+  nodes = np.array([[0,0,0], [0,0,safeZ], [x[0],y[0],safeZ]] +
+    [[x[j],y[j],-finalDepth*(k+1)/numPasses] for k in range(numPasses) for j in range(len(x))[::(1-2*(k%2))]] +
+    [[x[-(numPasses%2)],y[-(numPasses%2)],safeZ], [0,0,safeZ]]).T
+  taxis = np.array([[0,0], [2,1], [nodes.shape[1]-3,0]]).T
+
+  ToolPath(nodes, taxis).PathToGCode(feedRate, fname)
+
 ##################################################################################################################
 
 class PathGrid:
