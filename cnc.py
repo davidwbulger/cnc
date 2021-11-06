@@ -603,6 +603,33 @@ class PathGrid:
           taxes.append(1)  #  feed mode
         curpos = nextpath[:,-1,None]
 
+    # Now, there's a common situation that's wasting a lot of machine time, so I'll create a hacky shortcut
+    # to amelriorate it for now. The situation is where the bit comes to the end of a row, retracts straight
+    # upward, makes a very small motion to the start of the next row, and then advances downward before
+    # cutting. The vertical motion wastes a lot of time.
+    # print(pcpaths[:6])
+    # print(taxes[:6])
+    for k in range(1,len(scpaths)):
+      if k<6:
+        print(f"============  k={k}")
+        print(f"taxes[{k-1}]={taxes[k-1]} and taxes[{k}]={taxes[k]}")
+        print(f"scpaths[{k-1}] =")
+        print(scpaths[k-1])
+        print(f"scpaths[{k}] =")
+        print(scpaths[k])
+        print([taxes[k-1]==1, taxes[k]==1, scpaths[k-1].shape[1]>2, scpaths[k].shape[1]>2, 
+          scpaths[k-1][2,-2]<scpaths[k-1][2,-1], scpaths[k][2,1]<scpaths[k][2,0],
+          np.linalg.norm(scpaths[k-1][:2,-2]-scpaths[k-1][:2,-1])<0.2*ballrad,
+          np.linalg.norm(scpaths[k][:2,0]-scpaths[k][:2,1])<0.2*ballrad,
+          np.linalg.norm(scpaths[k-1][:2,-2]-scpaths[k][:2,1])<ballrad])
+      if (taxes[k-1]==1 and taxes[k]==1 and scpaths[k-1].shape[1]>2 and scpaths[k].shape[1]>2 and 
+        scpaths[k-1][2,-2]<scpaths[k-1][2,-1] and scpaths[k][2,1]<scpaths[k][2,0] and
+        np.linalg.norm(scpaths[k-1][:2,-2]-scpaths[k-1][:2,-1])<0.2*ballrad and
+        np.linalg.norm(scpaths[k][:2,0]-scpaths[k][:2,1])<0.2*ballrad and
+        np.linalg.norm(scpaths[k-1][:2,-2]-scpaths[k][:2,1])<ballrad):
+        scpaths[k-1] = scpaths[k-1][:,:-1]
+        scpaths[k] = scpaths[k][:,1:]
+
     # Now also need to return to origin:
     taxes.append(0)
     if PostSH.maxoseg(np.column_stack((curpos, np.zeros((3,1))))) > -2:
