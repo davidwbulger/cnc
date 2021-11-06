@@ -4,6 +4,9 @@
 import cnc
 
 pt = cnc.polyTri("./Dinos.stl")
+
+# Convert from m to mm:
+pt = pt.afxform([[1e3,0,0,0],[0,1e3,0,0],[0,0,1e3,0],[0,0,0,1]])
 print(pt)
 
 pg = pt.toPG(0.3)
