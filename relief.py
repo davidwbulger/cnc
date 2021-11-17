@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 import scipy.stats
 import sys
 
-if len(sys.argv) != :
+if len(sys.argv) != 5:
   print("Usage: python relief.py modName height depth bkgRad")
-else
+else:
   modName = sys.argv[1]
   (height, depth, bkgRad) = tuple(float(a) for a in sys.argv[2:])
   pt = cnc.polyTri(f"./{modName}.stl")
