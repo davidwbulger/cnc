@@ -610,7 +610,7 @@ class PathGrid:
     # print(pcpaths[:6])
     # print(taxes[:6])
     for k in range(1,len(scpaths)):
-      if k<6:
+      if k<6 and False:   #   just some debugging output
         print(f"============  k={k}")
         print(f"taxes[{k-1}]={taxes[k-1]} and taxes[{k}]={taxes[k]}")
         print(f"scpaths[{k-1}] =")
