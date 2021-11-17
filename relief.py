@@ -19,11 +19,12 @@ else:
     [[height,0,0,0],[0,height,0,0],[0,0,depth,0],[0,0,0,1]]))
 
   # Also add a floor at (0,0,-depth) of radius bkgRad:
+  sector = 2*np.pi/30
   for n in range(30):
     pt.addConvexPolygon(np.array([
       [0,0,-depth],
-      [bkgRad*np.cos(n/30),bkgRad*np.sin(n/30),-depth],
-      [bkgRad*np.cos((n+1)/30),bkgRad*np.sin((n+1)/30),-depth]]))
+      [bkgRad*np.cos(n*sector),bkgRad*np.sin(n*sector),-depth],
+      [bkgRad*np.cos((n+1)*sector),bkgRad*np.sin((n+1)*sector),-depth]]))
 
   print("Final shape:")
   print(pt)
