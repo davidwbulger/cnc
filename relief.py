@@ -29,8 +29,11 @@ else:
   print("Final shape:")
   print(pt)
 
-  pg = pt.toPG(0.3)
+  (offset, ballrad, speed) = (0.35, 1.0, 2000)
+  # (offset, ballrad, speed) = (0.15, 0.75, 1200)
+
+  pg = pt.toPG(offset)
 
   # WRITE THE GCODE:
-  tp = pg.SingleToolNoOpt(1)
-  tp.PathToGCode(1000, f"{modName}.gcode")
+  tp = pg.SingleToolNoOpt(ballrad)
+  tp.PathToGCode(speed, f"{modName}.gcode")
