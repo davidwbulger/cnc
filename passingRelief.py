@@ -42,6 +42,9 @@ else:
       [bkgRad*np.cos(n*sector),bkgRad*np.sin(n*sector),-depth],
       [bkgRad*np.cos((n+1)*sector),bkgRad*np.sin((n+1)*sector),-depth]]))
 
+  # Also move down to stochk height:
+  pt = pt.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,stckHt],[0,0,0,1]]))
+
   print("Final shape:")
   print(pt)
 
@@ -51,5 +54,5 @@ else:
   # tp = pg.SingleToolNoOpt(bitRad)
   cude = depth/(numPasses-0.3)  #  make final pass a little shallower
   tp = pg.MultiToolGreedy(stckHt,[{'bitrad':bitRad,'cude':cude,'ds':1}],
-    ymono=True)
-  tp.PathToGCode(1000, f"{modName}.gcode")
+    ymono=True)[0]
+  tp.PathToGCode(1000, f"{modName}_{bitRad}mm.gcode")
