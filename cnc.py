@@ -142,8 +142,8 @@ class ToolPath:
   def __init__(self, nodes, taxis):
     # if nodes[:,[0,-1]].any():
     #   raise ToolPathError("First and last node must be the origin.")
-    if nodes[:,0].any():
-      raise ToolPathError("First node must be the origin.")
+    # if nodes[:,0].any():
+    #   raise ToolPathError("First node must be the origin.")
     if nodes[:,-1].any():
       print("Note that the final node is not the origin.")
     if taxis[0,0]!=0 or taxis[0,-1]>=nodes.shape[1]-1 or np.any(np.diff(taxis[0,:])<1):

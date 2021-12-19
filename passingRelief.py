@@ -61,11 +61,11 @@ else:
   #   ymono=True)[0]
 
   tpOnePass = pg.SingleToolNoOpt(bitRad)
-  cude = stckHt +
-    np.concatenate((depth - np.arange(1,numPasses)*depth/(numPasses-0.3),[0]))
-  tpAll = cnc.compileToolPaths(list(tp.OnePass.afxform(np.array(
+  cude = np.concatenate(
+    (depth - np.arange(1,numPasses)*depth/(numPasses-0.3),[0]))
+  tpAll = cnc.catToolPaths(list(tpOnePass.afxform(np.array(
     [[1,0,0,0],[0,1,0,0],[0,0,1,cd],[0,0,0,1]])) for cd in cude))
   # Also move down to stock height:
-  tp = tp.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,stckHt],[0,0,0,1]]))
+  tp = tpAll.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,stckHt],[0,0,0,1]]))
 
   tp.PathToGCode(1000, f"{modName}_{bitRad}mm.gcode")
