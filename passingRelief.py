@@ -42,8 +42,8 @@ else:
       [bkgRad*np.cos(n*sector),bkgRad*np.sin(n*sector),-depth],
       [bkgRad*np.cos((n+1)*sector),bkgRad*np.sin((n+1)*sector),-depth]]))
 
-  # Also move down to stochk height:
-  pt = pt.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,stckHt],[0,0,0,1]]))
+  # # Also move down to stock height:
+  # pt = pt.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,stckHt],[0,0,0,1]]))
 
   print("Final shape:")
   print(pt)
@@ -51,8 +51,21 @@ else:
   pg = pt.toPG(offset)
 
   # WRITE THE GCODE:
+
+  # Not this way, because we want multiple layers:
   # tp = pg.SingleToolNoOpt(bitRad)
-  cude = depth/(numPasses-0.3)  #  make final pass a little shallower
-  tp = pg.MultiToolGreedy(stckHt,[{'bitrad':bitRad,'cude':cude,'ds':1}],
-    ymono=True)[0]
+
+  # Not this way, because something's awry with MultiToolGreedy:
+  # cude = depth/(numPasses-0.3)  #  make final pass a little shallower
+  # tp = pg.MultiToolGreedy(stckHt,[{'bitrad':bitRad,'cude':cude,'ds':1}],
+  #   ymono=True)[0]
+
+  tpOnePass = pg.SingleToolNoOpt(bitRad)
+  cude = stckHt +
+    np.concatenate((depth - np.arange(1,numPasses)*depth/(numPasses-0.3),[0]))
+  tpAll = cnc.compileToolPaths(list(tp.OnePass.afxform(np.array(
+    [[1,0,0,0],[0,1,0,0],[0,0,1,cd],[0,0,0,1]])) for cd in cude))
+  # Also move down to stock height:
+  tp = tp.afxform(np.array([[1,0,0,0],[0,1,0,0],[0,0,1,stckHt],[0,0,0,1]]))
+
   tp.PathToGCode(1000, f"{modName}_{bitRad}mm.gcode")
