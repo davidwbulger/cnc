@@ -10,12 +10,12 @@ import matplotlib.pyplot as plt
 # Parameters:
 ovWidth = 99
 ovHeight = 77
-ovDepth = 9
-vWaste = 0.5  #  extra depth to be cut away; orig depth should be oD+2*vW
+ovDepth = 9.6
+vWaste = 1  #  extra depth to be cut away; orig depth should be oD+2*vW
 imWidth = 77
 imOffset = np.array([1.5,-3.5])
 rad = 3  #  radius of ball nose
-graveDepth = 1.5  #  excessive?
+graveDepth = 2.5  #  excessive?
 safeHt = 3
 
 # imported paths from Inkscape:
@@ -184,6 +184,13 @@ def bitPos(x,y,bitrad):
     grad = grad / np.linalg.norm(grad)
     return np.array([x,y,z])+rad*grad+np.array(
       [0,0,-bitrad-0.5*ovDepth-vWaste])
+  elif bitrad<0:  #  cutting the oval recess
+    z = -z
+    grad = np.array([x/ovWidth**2*((x/ovWidth)**2+(y/ovHeight)**2),
+      y/ovHeight**2*((x/ovWidth)**2+(y/ovHeight)**2), z**3/ovDepth**4])
+    grad = grad / np.linalg.norm(grad)
+    return np.array([x,y,z])+rad*grad+np.array(
+      [0,0,bitrad])
   else:  #  engraving step!
     return np.array([x,y,z])+np.array([0,0,-0.5*ovDepth-graveDepth])
 
@@ -191,7 +198,7 @@ def tanPath():
   # Returns the path in 2D of the tangent point to cut. Only a function for the
   # sake of tidiness.
   stepangle = 0.01  #  radians; about 0deg34'23"
-  offset = 0.8
+  offset = 0.4
   N1 = int(np.pi*ovWidth/(stepangle*offset))  #  num nodes in path's 1st part
   N2 = int(2*np.pi/stepangle)  #  num nodes in path's 2nd part (outer circumf)
   r = np.concatenate((1-np.linspace(1,0,N1)**1.5, np.ones(N2)))
@@ -202,6 +209,10 @@ def nosePath():
   # Returns the path in 3D of the nose of the bit while cutting the oval
   # surface.
   return np.array([bitPos(x,y,rad) for (x,y) in tanPath()])
+
+def recessPath():
+  # Returns the path in 3D of the nose of the bit while cutting the recess.
+  return np.array([bitPos(x,y,-rad) for (x,y) in tanPath()])
 
 def pointPaths():
   # Returns the path in 3D of the nose of the v-bit while engraving the image.
@@ -228,6 +239,7 @@ def writePathListToGCode(pathList,progName):
   tp.PathToGCode(1200, progName)
 
 writePathListToGCode([nosePath()], "Oval")
+writePathListToGCode([recessPath()], "Recess")
 writePathListToGCode(pointPaths(), "Jaca")
 
 boolPlot = False
