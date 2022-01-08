@@ -7,17 +7,22 @@ import cnc as cnc
 import numpy as np
 import matplotlib.pyplot as plt
 
+###############################################################################
 # Parameters:
-ovWidth = 99
-ovHeight = 77
-ovDepth = 9.6
-vWaste = 1  #  extra depth to be cut away; orig depth should be oD+2*vW
-imWidth = 77
-imOffset = np.array([1.5,-3.5])
-rad = 3  #  radius of ball nose
-graveDepth = 2.5  #  excessive?
-safeHt = 3
+# Radii (x,y,z); centres (x,y,z); margin multipliers of ovoids:
+ovoids = [(40,31,4.8,0,0,0,1.02),(4,4,4,0,39,0,1.5)]
+mep = -0.7  #  norm parameter used to merge ovoids' surfaces
 
+vWaste = 1  #  extra depth to be cut away; orig depth should be oD+2*vW
+imWidth = 62
+imXlate = np.array([1,-2.5])
+rad = 3  #  radius of ball nose
+graveDepth = 2  #  but try 10deg bit this time, and run it repeatedly
+safeHt = 3
+cutVant = 10  #  height above (0,0,z)st pot(0,0,z)=0 whence engraving starts
+delta = 0.01  #  step size for estimating gradients
+
+###############################################################################
 # imported paths from Inkscape:
 impPaths = [
 np.array([
@@ -142,6 +147,7 @@ np.array([
 [131.73234, 82.44596299999999],
 [127.38355, 85.79816199999999],])]
 
+###############################################################################
 # PROCESS THE PATHS:
 # Flip vertically:
 procPaths = [path*[1,-1] for path in impPaths]
@@ -159,60 +165,87 @@ maxs = np.max(np.array([np.max(p,0) for p in procPaths]),0)
 procPaths = [path-(mins+maxs)/2 for path in procPaths]
 
 # Scale it:
-procPaths = [imOffset+path*imWidth/(maxs[0]-mins[0]) for path in procPaths]
+procPaths = [imXlate+path*imWidth/(maxs[0]-mins[0]) for path in procPaths]
 
-# Now how to control ball end to cut the oval? The equation for the oval should
-# be
-# ((2x/oW)^2+(2y/oH)^2)^2+(2z/oD)^4=1.
-# Given x & y, want to choose z such that the distance from (x,y,z) to the
-# surface is r.
-# For parallel plane-intersecting paths (of constant y, say), sample a grid of
-# surface points' heights AND GRADIENTS, and calculate position of ball centre
-# (and thus of nose) for ball to be tangent.
+###############################################################################
+# Now how to control ball end to cut the oval?
+# Unlike in the first attempt, we'll allow a more general shape, defined as a
+# level set, and calculate the gradients numerically.
 
-def bitPos(x,y,bitrad):
+# "Potential": negative inside shape, positive outside.
+# It is assumed that each (x,y) has at most one +ve z for which pot(x,y,z)=0.
+def pot(x):
+  potlist = np.array([(((x[0]-xc)/xr)**2+((x[1]-yc)/yr)**2)**2 +
+    ((x[2]-zc)/zr)**4 for (xr,yr,zr,xc,yc,zc,mm) in ovoids])
+  if np.min(potlist)<1e-6:
+    return -1
+  else:
+    return np.sum(potlist**mep)**(1/mep)-1
+
+# Iterated interpolation to find z s.t. pot(x,y,z)=0.
+# We make the simplifying assumption that pot is increasing with z^2.
+def xytoxyz(xy):
+  # Here [LHI][PZ] stand for low,high,interpolated pot,z values. Typically we
+  # expect that the interval [LZ,HZ] will bound the sought z value, but we
+  # won't rely on that.
+  LP = pot(np.array((*xy,0)))
+  if LP > 0:
+    return np.array((*xy,0))
+  LZ = 0
+  HZ = 10
+  HP = pot(np.array((*xy,HZ)))
+  IP = 1
+  while np.abs(IP) > 1e-6:
+    IZ = (LZ+HZ)/2
+    IP = pot(np.array((*xy,IZ)))
+    if IP>0:
+      (HP,HZ) = (IP,IZ)
+    else:
+      (LP,LZ) = (IP,IZ)
+  return np.array((*xy,IZ))
+
+def unitNormal(xyz):
+  # Not hugely efficient but symmetrical at least.
+  grad = np.array([pot(xyz+[delta if k==j else 0 for k in range(3)]) -
+    pot(xyz-[delta if k==j else 0 for k in range(3)]) for j in range(3)])
+  if np.abs(np.linalg.norm(grad)) < 1e-12:
+    breakpoint()
+  return grad/np.linalg.norm(grad)
+
+def bitPos(x,y,bitrad,boolPos=True):
   # Inputs x & y coordinates for a point on the oval's surface.
   # Outputs the corresponding (x,y,z) for the nose of the bit.
-  e = 1-((2*x/ovWidth)**2+(2*y/ovHeight)**2)**2
-  if e > 0:
-    z = e**0.25*ovDepth/2
+  # Set boolPos to False for carving the recess.
+  xyz = xytoxyz((x,y))
+  if bitrad==0:  #  engraving step!
+    return xyz + np.array([0,0,-cutVant-graveDepth])
   else:
-    z = 0;
-  if bitrad>0:  #  cutting the oval surface
-    grad = np.array([x/ovWidth**2*((x/ovWidth)**2+(y/ovHeight)**2),
-      y/ovHeight**2*((x/ovWidth)**2+(y/ovHeight)**2), z**3/ovDepth**4])
-    grad = grad / np.linalg.norm(grad)
-    return np.array([x,y,z])+rad*grad+np.array(
-      [0,0,-bitrad-0.5*ovDepth-vWaste])
-  elif bitrad<0:  #  cutting the oval recess
-    z = -z
-    grad = np.array([x/ovWidth**2*((x/ovWidth)**2+(y/ovHeight)**2),
-      y/ovHeight**2*((x/ovWidth)**2+(y/ovHeight)**2), z**3/ovDepth**4])
-    grad = grad / np.linalg.norm(grad)
-    return np.array([x,y,z])+rad*grad+np.array(
-      [0,0,bitrad])
-  else:  #  engraving step!
-    return np.array([x,y,z])+np.array([0,0,-0.5*ovDepth-graveDepth])
+    grad = unitNormal(xyz)
+    if not boolPos:
+      xyz *= [-1,1,-1]
+      grad *= [1,-1,1]
+    return xyz + rad*grad - (
+      np.array([0,0,vWaste+np.max([o[2] for o in ovoids])]) if boolPos else 0)
 
-def tanPath():
-  # Returns the path in 2D of the tangent point to cut. Only a function for the
-  # sake of tidiness.
+def tanPath(xr,yr,xc,yc,mm):
+  # Returns the path in 2D of the tangent point to cut.
   stepangle = 0.01  #  radians; about 0deg34'23"
-  offset = 0.4
-  N1 = int(np.pi*ovWidth/(stepangle*offset))  #  num nodes in path's 1st part
-  N2 = int(2*np.pi/stepangle)  #  num nodes in path's 2nd part (outer circumf)
-  r = np.concatenate((1-np.linspace(1,0,N1)**1.5, np.ones(N2)))
-  th = stepangle*np.arange(N1+N2)
-  return np.vstack((0.5*ovWidth*r*np.cos(th), 0.5*ovHeight*r*np.sin(th))).T
+  offset = 0.3
+  N = int(mm*2*np.pi*xr/(stepangle*offset))  #  num nodes in path
+  r = mm*(1-np.linspace(1,0,N)**1.5)
+  th = stepangle*np.arange(N)
+  return np.vstack((xc+xr*r*np.cos(th), yc+yr*r*np.sin(th))).T
 
-def nosePath():
-  # Returns the path in 3D of the nose of the bit while cutting the oval
+def nosePaths():
+  # Returns the path in 3D of the nose of the bit while cutting the upper
   # surface.
-  return np.array([bitPos(x,y,rad) for (x,y) in tanPath()])
+  return [np.array([bitPos(x,y,rad) for (x,y) in tanPath(xr,yr,xc,yc,mm)]) for
+    (xr,yr,zr,xc,yc,zc,mm) in ovoids]
 
-def recessPath():
+def recessPaths():
   # Returns the path in 3D of the nose of the bit while cutting the recess.
-  return np.array([bitPos(x,y,-rad) for (x,y) in tanPath()])
+  return [np.array([bitPos(x,y,rad,False) for(x,y) in tanPath(xr,yr,xc,yc,mm)])
+    for (xr,yr,zr,xc,yc,zc,mm) in ovoids]
 
 def pointPaths():
   # Returns the path in 3D of the nose of the v-bit while engraving the image.
@@ -234,12 +267,13 @@ def writePathListToGCode(pathList,progName):
   taxis = np.concatenate((taxis, np.array([[nodes.shape[1]],[0]])), axis=1)
   nodes = np.concatenate((nodes, np.array([[nodes[0,-1],0,0],
     [nodes[1,-1],0,0], [safeHt,safeHt,0]])), axis=1)
-  # cnc.ToolPath(nodes, taxis).PathToGCode(1200, progName)
   tp = cnc.ToolPath(nodes, taxis)
   tp.PathToGCode(1200, progName)
 
-writePathListToGCode([nosePath()], "Oval")
-writePathListToGCode([recessPath()], "Recess")
+writePathListToGCode(nosePaths(), "Oval")
+writePathListToGCode(recessPaths(), "Recess")
+xyz = xytoxyz([0,0])
+cutVant += xyz[2]
 writePathListToGCode(pointPaths(), "Jaca")
 
 boolPlot = False
