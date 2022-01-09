@@ -270,18 +270,31 @@ def writePathListToGCode(pathList,progName):
   tp = cnc.ToolPath(nodes, taxis)
   tp.PathToGCode(1200, progName)
 
-writePathListToGCode(nosePaths(), "Oval")
-writePathListToGCode(recessPaths(), "Recess")
-xyz = xytoxyz([0,0])
-cutVant += xyz[2]
-writePathListToGCode(pointPaths(), "Jaca")
+boolGCode = False
+if boolGCode:
+  writePathListToGCode(nosePaths(), "Oval")
+  writePathListToGCode(recessPaths(), "Recess")
+  xyz = xytoxyz([0,0])
+  cutVant += xyz[2]
+  writePathListToGCode(pointPaths(), "Jaca")
 
 boolPlot = False
 if boolPlot:
-  for path in procPaths[0:]:
-    plt.plot(path[:,0], path[:,1], color="blue")
-  phi = np.linspace(0,2*np.pi,361)
-  plt.plot(0.5*ovWidth*np.cos(phi), 0.5*ovHeight*np.sin(phi), color="black")
-  xy = tanPath()
-  plt.plot(xy[:,0], xy[:,1], color="grey")
+  lines = [np.array([xytoxyz((x,y)) for x in np.arange(-41,41,0.4)])
+    for y in np.arange(-32,45,0.4)]
+  lines = [l[l[:,2]>0,:] for l in lines]  #  trim beyond piece
+  lines = [np.concatenate((l,l*[[-1,1,-1]])) for l in lines]
+  ax = plt.axes(projection='3d')
+  for l in lines:
+    ax.plot3D(l[:,0],l[:,1],l[:,2],'blue')
+
+  # Trying to set aspect ratio to 1:1:1:
+  # plt.gca().set_aspect('equal')  #  should work but doesn't.
+  ax.set_box_aspect([ub-lb for (lb,ub) in (getattr(ax, f'get_{a}lim')()
+    for a in 'xyz')])  #  https://github.com/matplotlib/matplotlib/issues/17172
   plt.show()
+
+boolMeasure = True
+if boolMeasure:
+  print([np.sum(np.linalg.norm(np.diff(path,axis=0),axis=1))
+    for path in procPaths])
