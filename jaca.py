@@ -10,13 +10,13 @@ import matplotlib.pyplot as plt
 ###############################################################################
 # Parameters:
 # Radii (x,y,z); centres (x,y,z); margin multipliers of ovoids:
-ovoids = [(40,31,4.8,0,0,0,1.02),(4,4,4,0,39,0,1.5)]
-mep = -0.55  #  norm parameter used to merge ovoids' surfaces
+ovoids = [(40,31,4.8,0,0,0,1.03),(4,4,4,0,39,0,2.5)]
+mep = -0.6  #  norm parameter used to merge ovoids' surfaces
 
 vWaste = 1  #  extra depth to be cut away; orig depth should be oD+2*vW
 imWidth = 62
 imXlate = np.array([1,-2.5])
-rad = 2  #  radius of ball nose
+rad = 1.6  #  radius of ball nose
 graveDepth = 2  #  but try 10deg bit this time, and run it repeatedly
 safeHt = 3
 cutVant = 10  #  height above (0,0,z)st pot(0,0,z)=0 whence engraving starts
@@ -226,12 +226,12 @@ def bitPos(x,y,bitrad,boolPos=True):
       xyz *= [-1,1,-1]
       grad *= [1,-1,1]
     return xyz + bitrad*grad - (
-      np.array([0,0,vWaste+np.max([o[2] for o in ovoids])]) if boolPos else 0)
+      np.array([0,0,bitrad+vWaste+np.max([o[2] for o in ovoids])]) if boolPos else 0)
 
 def tanPath(xr,yr,xc,yc,mm):
   # Returns the path in 2D of the tangent point to cut.
   stepangle = 0.01  #  radians; about 0deg34'23"
-  offset = 0.2
+  offset = 0.15
   N = int(mm*2*np.pi*xr/(stepangle*offset))  #  num nodes in path
   r = mm*(1-np.linspace(1,0,N)**1.5)
   th = stepangle*np.arange(N)
@@ -240,13 +240,19 @@ def tanPath(xr,yr,xc,yc,mm):
 def nosePaths():
   # Returns the path in 3D of the nose of the bit while cutting the upper
   # surface.
-  return [np.array([bitPos(x,y,rad) for (x,y) in tanPath(xr,yr,xc,yc,mm)]) for
-    (xr,yr,zr,xc,yc,zc,mm) in ovoids]
+  altov = [ovoids[0][:4]+(ovoids[0][4]+1,)+ovoids[0][5:],
+    ovoids[1][:4]+(ovoids[1][4]-2.8,)+ovoids[1][5:]]
+  retval = [np.array([bitPos(x,y,rad) for (x,y) in tanPath(xr,yr,xc,yc,mm)]) for
+    (xr,yr,zr,xc,yc,zc,mm) in altov]
+  # This bit is a total hack; no idea why it's needed.
+  retval[1] += [0,0,1]
+  return retval
 
 def recessPaths():
   # Returns the path in 3D of the nose of the bit while cutting the recess.
+  altov = [ovoids[0], ovoids[1][:-1]+(3,)]
   return [np.array([bitPos(x,y,rad,False) for(x,y) in tanPath(xr,yr,xc,yc,mm)])
-    for (xr,yr,zr,xc,yc,zc,mm) in ovoids]
+    for (xr,yr,zr,xc,yc,zc,mm) in altov]
 
 def pointPaths():
   # Returns the path in 3D of the nose of the v-bit while engraving the image.
@@ -274,12 +280,12 @@ def writePathListToGCode(pathList,progName):
 boolGCode = True
 if boolGCode:
   writePathListToGCode(nosePaths(), "Oval")
-  writePathListToGCode(recessPaths(), "Recess")
-  xyz = xytoxyz([0,0])
-  cutVant += xyz[2]
-  writePathListToGCode(pointPaths(), "Jaca")
+  #writePathListToGCode(recessPaths(), "Recess")
+  #xyz = xytoxyz([0,0])
+  #cutVant += xyz[2]
+  #writePathListToGCode(pointPaths(), "Jaca")
 
-boolPlot = True
+boolPlot = False
 if boolPlot:
   lines = [np.array([xytoxyz((x,y)) for x in np.arange(-41,41,0.4)])
     for y in np.arange(-32,45,0.4)]
