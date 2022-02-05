@@ -11,12 +11,12 @@ import matplotlib.pyplot as plt
 # Parameters:
 # Radii (x,y,z); centres (x,y,z); margin multipliers of ovoids:
 ovoids = [(40,31,4.8,0,0,0,1.02),(4,4,4,0,39,0,1.5)]
-mep = -0.7  #  norm parameter used to merge ovoids' surfaces
+mep = -0.55  #  norm parameter used to merge ovoids' surfaces
 
 vWaste = 1  #  extra depth to be cut away; orig depth should be oD+2*vW
 imWidth = 62
 imXlate = np.array([1,-2.5])
-rad = 3  #  radius of ball nose
+rad = 2  #  radius of ball nose
 graveDepth = 2  #  but try 10deg bit this time, and run it repeatedly
 safeHt = 3
 cutVant = 10  #  height above (0,0,z)st pot(0,0,z)=0 whence engraving starts
@@ -222,15 +222,16 @@ def bitPos(x,y,bitrad,boolPos=True):
   else:
     grad = unitNormal(xyz)
     if not boolPos:
+      # Carving the recess:
       xyz *= [-1,1,-1]
       grad *= [1,-1,1]
-    return xyz + rad*grad - (
+    return xyz + bitrad*grad - (
       np.array([0,0,vWaste+np.max([o[2] for o in ovoids])]) if boolPos else 0)
 
 def tanPath(xr,yr,xc,yc,mm):
   # Returns the path in 2D of the tangent point to cut.
   stepangle = 0.01  #  radians; about 0deg34'23"
-  offset = 0.3
+  offset = 0.2
   N = int(mm*2*np.pi*xr/(stepangle*offset))  #  num nodes in path
   r = mm*(1-np.linspace(1,0,N)**1.5)
   th = stepangle*np.arange(N)
@@ -270,7 +271,7 @@ def writePathListToGCode(pathList,progName):
   tp = cnc.ToolPath(nodes, taxis)
   tp.PathToGCode(1200, progName)
 
-boolGCode = False
+boolGCode = True
 if boolGCode:
   writePathListToGCode(nosePaths(), "Oval")
   writePathListToGCode(recessPaths(), "Recess")
@@ -278,7 +279,7 @@ if boolGCode:
   cutVant += xyz[2]
   writePathListToGCode(pointPaths(), "Jaca")
 
-boolPlot = False
+boolPlot = True
 if boolPlot:
   lines = [np.array([xytoxyz((x,y)) for x in np.arange(-41,41,0.4)])
     for y in np.arange(-32,45,0.4)]
@@ -298,3 +299,12 @@ boolMeasure = True
 if boolMeasure:
   print([np.sum(np.linalg.norm(np.diff(path,axis=0),axis=1))
     for path in procPaths])
+
+# Add jitter to paths, & then plot in random colours, to check for overlap:
+boolCheckPaths = False
+if boolCheckPaths:
+  fig = plt.figure()
+  for p in procPaths:
+    rp = p + np.random.normal(scale=0.2, size=p.shape)
+    plt.plot(rp[:,0], rp[:,1], color=0.8*np.random.rand(3))
+  plt.show()
