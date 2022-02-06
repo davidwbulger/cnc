@@ -225,15 +225,15 @@ def bitPos(x,y,bitrad,boolPos=True):
       # Carving the recess:
       xyz *= [-1,1,-1]
       grad *= [1,-1,1]
-    return xyz + bitrad*grad - (
-      np.array([0,0,bitrad+vWaste+np.max([o[2] for o in ovoids])]) if boolPos else 0)
+    return xyz + bitrad*grad - np.array([0, 0, bitrad + (
+      vWaste+np.max([o[2] for o in ovoids]) if boolPos else 0)])
 
 def tanPath(xr,yr,xc,yc,mm):
   # Returns the path in 2D of the tangent point to cut.
   stepangle = 0.01  #  radians; about 0deg34'23"
-  offset = 0.15
+  offset = 0.18
   N = int(mm*2*np.pi*xr/(stepangle*offset))  #  num nodes in path
-  r = mm*(1-np.linspace(1,0,N)**1.5)
+  r = mm*(1-np.linspace(1,0,N)**1.8)
   th = stepangle*np.arange(N)
   return np.vstack((xc+xr*r*np.cos(th), yc+yr*r*np.sin(th))).T
 
@@ -242,10 +242,10 @@ def nosePaths():
   # surface.
   altov = [ovoids[0][:4]+(ovoids[0][4]+1,)+ovoids[0][5:],
     ovoids[1][:4]+(ovoids[1][4]-2.8,)+ovoids[1][5:]]
-  retval = [np.array([bitPos(x,y,rad) for (x,y) in tanPath(xr,yr,xc,yc,mm)]) for
+  retval =[np.array([bitPos(x,y,rad) for (x,y) in tanPath(xr,yr,xc,yc,mm)]) for
     (xr,yr,zr,xc,yc,zc,mm) in altov]
   # This bit is a total hack; no idea why it's needed.
-  retval[1] += [0,0,1]
+  retval[1][:,2] += np.linspace(0,1,retval[1].shape[0])**2
   return retval
 
 def recessPaths():
@@ -280,10 +280,10 @@ def writePathListToGCode(pathList,progName):
 boolGCode = True
 if boolGCode:
   writePathListToGCode(nosePaths(), "Oval")
-  #writePathListToGCode(recessPaths(), "Recess")
-  #xyz = xytoxyz([0,0])
-  #cutVant += xyz[2]
-  #writePathListToGCode(pointPaths(), "Jaca")
+  writePathListToGCode(recessPaths(), "Recess")
+  xyz = xytoxyz([0,0])
+  cutVant += xyz[2]
+  writePathListToGCode(pointPaths(), "Jaca")
 
 boolPlot = False
 if boolPlot:
@@ -305,6 +305,14 @@ boolMeasure = True
 if boolMeasure:
   print([np.sum(np.linalg.norm(np.diff(path,axis=0),axis=1))
     for path in procPaths])
+# 170.9
+#  17.4
+#  14.4
+#   8.9
+#  15.3
+#  14.1
+#  12.9
+#  28.4
 
 # Add jitter to paths, & then plot in random colours, to check for overlap:
 boolCheckPaths = False
