@@ -225,8 +225,13 @@ def bitPos(x,y,bitrad,boolPos=True):
       # Carving the recess:
       xyz *= [-1,1,-1]
       grad *= [1,-1,1]
-    return xyz + bitrad*grad - np.array([0, 0, bitrad + (
-      vWaste+np.max([o[2] for o in ovoids]) if boolPos else 0)])
+    # return xyz + bitrad*grad - np.array([0, 0, bitrad + (
+    #   vWaste+np.max([o[2] for o in ovoids]) if boolPos else 0)])
+    retval = xyz + bitrad*grad
+    retval[retval[:,2]<0,2] -= bitrad
+    if boolPos:
+      retval[:,2] -= (vWaste + np.max([o[2] for o in ovoids]))
+    return retval
 
 def tanPath(xr,yr,xc,yc,mm):
   # Returns the path in 2D of the tangent point to cut.
