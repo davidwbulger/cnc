@@ -228,9 +228,9 @@ def bitPos(x,y,bitrad,boolPos=True):
     # return xyz + bitrad*grad - np.array([0, 0, bitrad + (
     #   vWaste+np.max([o[2] for o in ovoids]) if boolPos else 0)])
     retval = xyz + bitrad*grad
-    retval[retval[:,2]<0,2] -= bitrad
+    if retval[2]<0: retval[2] -= bitrad
     if boolPos:
-      retval[:,2] -= (vWaste + np.max([o[2] for o in ovoids]))
+      retval[2] -= (vWaste + np.max([o[2] for o in ovoids]))
     return retval
 
 def tanPath(xr,yr,xc,yc,mm):
