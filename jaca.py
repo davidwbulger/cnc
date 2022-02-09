@@ -225,10 +225,13 @@ def bitPos(x,y,bitrad,boolPos=True):
       # Carving the recess:
       xyz *= [-1,1,-1]
       grad *= [1,-1,1]
+      if xyz[2] >= 0:
+        # happens if no contact
+        xyz[2] = 1+bitrad  #  bitrad will be subtracted again, leaving clearance of 1mm
     # return xyz + bitrad*grad - np.array([0, 0, bitrad + (
     #   vWaste+np.max([o[2] for o in ovoids]) if boolPos else 0)])
     retval = xyz + bitrad*grad
-    if retval[2]<0: retval[2] -= bitrad
+    retval[2] -= bitrad  #  if retval[2]<0: retval[2] -= bitrad
     if boolPos:
       retval[2] -= (vWaste + np.max([o[2] for o in ovoids]))
     return retval
@@ -245,12 +248,12 @@ def tanPath(xr,yr,xc,yc,mm):
 def nosePaths():
   # Returns the path in 3D of the nose of the bit while cutting the upper
   # surface.
-  altov = [ovoids[0][:4]+(ovoids[0][4]+1,)+ovoids[0][5:],
-    ovoids[1][:4]+(ovoids[1][4]-2.8,)+ovoids[1][5:]]
+  altov = [ovoids[0][:4]+(ovoids[0][4]+0.8,)+ovoids[0][5:],
+    ovoids[1][:4]+(ovoids[1][4]-3.2,)+ovoids[1][5:]]
   retval =[np.array([bitPos(x,y,rad) for (x,y) in tanPath(xr,yr,xc,yc,mm)]) for
     (xr,yr,zr,xc,yc,zc,mm) in altov]
   # This bit is a total hack; no idea why it's needed.
-  retval[1][:,2] += np.linspace(0,1,retval[1].shape[0])**2
+  retval[1][:,2] += np.linspace(1,1.4,retval[1].shape[0])**2
   return retval
 
 def recessPaths():
@@ -285,10 +288,10 @@ def writePathListToGCode(pathList,progName):
 boolGCode = True
 if boolGCode:
   writePathListToGCode(nosePaths(), "Oval")
-  writePathListToGCode(recessPaths(), "Recess")
-  xyz = xytoxyz([0,0])
-  cutVant += xyz[2]
-  writePathListToGCode(pointPaths(), "Jaca")
+  #writePathListToGCode(recessPaths(), "Recess")
+  #xyz = xytoxyz([0,0])
+  #cutVant += xyz[2]
+  #writePathListToGCode(pointPaths(), "Jaca")
 
 boolPlot = False
 if boolPlot:
