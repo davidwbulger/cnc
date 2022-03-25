@@ -12,9 +12,9 @@ phi = 0.5+np.sqrt(1.25)
 # Side panel width is 380
 bitRad = 2
 w = 30         #  "tooth" base width
-a = w/(2*phi)  #  "tooth" length
+a = 0.5*w      #  "tooth" length
 h = 19+bitRad  #  actual width of top plus bit radius
-b = h/phi      #  extra tooth extension at bottom vs top of board
+b = h*4/3      #  extra tooth extension at bottom vs top of board
 c = (2+np.sqrt(8))/5  #  coefs in quadratic determining tooth shape
 d = (3+np.sqrt(8))/5  #  coefs in quadratic determining tooth shape
 tas = int(np.ceil(380/w-np.sqrt(0.125)))  #  number of teeth along side
@@ -35,7 +35,7 @@ class Tooth:
     # First create the path in the tooth's own coordinates (that is, the coords
     # with origin at (p0,0), and rotated around the z-direction so that
     # p1-p0=(0,w,0)):
-    t = np.linspace(-b/(2*a),1+b/(2*a),51)
+    t = np.linspace(-b/(2*a),1+b/(2*a),99)
     x = 2*a*np.minimum(t,1-t) + b*np.sin(theta)
     y = w * (t - c*x/(a+b) + d*(x/(a+b))**2)
     xy = np.concatenate(([x],[y])).T
@@ -45,7 +45,19 @@ class Tooth:
 
     # Now remove any vertices that would cut into neighbouring teeth:
     z = h*np.cos(theta)
-    xy = np.array([[*v,z] for v in xy if neighbourHeight(v)>z])
+    # At corners we're getting some strange behaviour. I thought this would be
+    # simpler ... but essentially we want the long run of True in the middle of
+    # the following list:
+    inclu = np.array([neighbourHeight(v)<z for v in xy])
+    prix = int(len(inclu)/2)
+    ultx = prix
+    while prix>0 and inclu[prix-1]:
+      prix -= 1
+    inclu[:prix] = False
+    while ultx<len(inclu)-1 and inclu[ultx+1]:
+      ultx += 1
+    inclu[ultx+1:] = False
+    xy = np.array([[*v,z-h] for (v,wh) in zip(xy,inclu) if wh])
     return xy
 
   def heightAtXY(self,xy):
