@@ -275,6 +275,18 @@ def cutPath(x, y, finalDepth, numPasses, feedRate, safeZ, fname):
 
   ToolPath(nodes, taxis).PathToGCode(feedRate, fname)
 
+def cutSequence(pathSeq, feedRate, safeZ, fname):
+  # Utility to cut a sequence of xyz paths (explcitly paced if necessary).
+
+  respirates = [np.concatenate(([[path[0,0],path[0,1],safeZ]],path,[[path[-1,0],path[-1,1],safeZ]]))
+    for path in pathSeq]
+  nodes = np.concatenate([[[0,0,0],[0,0,safeZ]]]+respirates+[[[0,0,safeZ]]]).T
+
+  ends = 1 + np.cumsum(2+np.array([len(path) for path in pathSeq]))
+  taxis = np.concatenate([[[0,0],[2,1],[ends[0],0]]] +
+    [[[ends[k]+1,1],[ends[k+1],0]] for k in range(len(ends)-1)]).T
+  ToolPath(nodes, taxis).PathToGCode(feedRate, fname)
+
 ##################################################################################################################
 
 class PathGrid:
