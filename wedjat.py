@@ -91,5 +91,5 @@ ax.plot(RL[0], RL[1], color='k', linewidth=LW, solid_capstyle='round'
 
 ax.axis('equal')
 ax.axis('off')
-plt.savefig("wedjat.png")
+plt.savefig("RecordCase/wedjat.png")
 plt.show()
