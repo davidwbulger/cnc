@@ -13,6 +13,7 @@ Ideally, cut boundary and then a grid to fill in interiors.
 """
 
 ppm = 4.1  #  pixels per millimetre
+ppm /= 0.88  #  have also reduced groover.py to 88%
 bitrad = 3.175/2  #  in millimetres
 rip = bitrad*ppm  #  radius in pixels
 inra = int(rip)
