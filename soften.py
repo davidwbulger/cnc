@@ -21,8 +21,8 @@ inra = int(rip)
 def makeGCode(cuts, depth, fname):
   # Note the change from matrix (& image) orientation to Cartesian:
   path3s = [np.concatenate(([cu[0]/ppm], [-cu[1]/ppm],
-    np.full((1,len(cu[0])),-paz))).T
-    for paz in depth*np.arange(1,4)/3 for cu in cuts]
+    np.full((1,len(cu[0])),-60-paz))).T
+    for paz in depth*np.arange(1,5)/4 for cu in cuts]
   # Offset so tight box's lower right corner is origin:
   boxmin = np.min(np.concatenate(path3s), axis=0)
   # but hack Iris.gcode so its origin is pupil centreL
@@ -33,7 +33,7 @@ def makeGCode(cuts, depth, fname):
     irrad=(path3s[0][rix,0]-path3s[0][lix,0])/2
     print(f"Iris radius is {irrad}mm.")  #  57mm.
   path3s = [p-boxmin*[1,1,0] for p in path3s]
-  cnc.cutSequence(path3s, 1000, 6, fname)
+  cnc.cutSequence(path3s, 1000, 0, fname)
 
 ##  PHASE 1: ROUND THE BOUNDARIES SO ALL CUTS CAN BE REACHED  #################
 
@@ -99,7 +99,7 @@ for (k,cu) in enumerate(cuts):
   cuts[k] = cu
   ax.plot(cu[0], cu[1], color='r')
 plt.show()
-makeGCode(cuts, 5, "Negative.gcode")
+makeGCode(cuts, 8, "Negative.gcode")
 
 # Iris, the cut around the iris piece:
 good = grsc*(1-grsc)>0.125
@@ -119,7 +119,7 @@ for (k,cu) in enumerate(cuts):
   cuts[k] = cu
   ax.plot(cu[0], cu[1], color='r')
 plt.show()
-makeGCode(cuts, 6, "Iris.gcode")  #  extra depth for positives to ensure free
+makeGCode(cuts, 9, "Iris.gcode")  #  extra depth for positives to ensure free
 
 # Brow & Wedjat, the cuts around the wedjat pieces:
 good = grsc<0.25
@@ -142,6 +142,6 @@ plt.show()
 
 # Identify & separate the disjoint brow piece:
 brix = np.argmin([np.mean(cu[1]) for cu in cuts])  #  recall, matrix indexing
-makeGCode([cuts[brix]], 6, "Brow.gcode")
+makeGCode([cuts[brix]], 9, "Brow.gcode")
 cuts[brix:brix+1] = []
-makeGCode(cuts, 6, "Wedjat.gcode")
+makeGCode(cuts, 9, "Wedjat.gcode")
