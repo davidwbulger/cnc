@@ -240,7 +240,7 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname):
   # Uses safe height sht.
   xwd = np.abs(np.diff(xran)[0])
   ywd = np.abs(np.diff(yran)[0])
-  if True:  #  Condition ought to be "xwd<ywd:", but the Z & Y axes aren't quite perpendicular
+  if xwd<ywd:  #  True:  #  Condition ought to be "xwd<ywd:", but the Z & Y axes aren't quite perpendicular
     (xran,yran,xwd,ywd) = (yran,xran,ywd,xwd)
     swapped = True
   else:

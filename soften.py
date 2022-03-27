@@ -21,7 +21,7 @@ inra = int(rip)
 def makeGCode(cuts, depth, fname):
   # Note the change from matrix (& image) orientation to Cartesian:
   path3s = [np.concatenate(([cu[0]/ppm], [-cu[1]/ppm],
-    np.full((1,len(cu[0])),-60-paz))).T
+    np.full((1,len(cu[0])),-10-paz))).T
     for paz in depth*np.arange(1,5)/4 for cu in cuts]
   # Offset so tight box's lower right corner is origin:
   boxmin = np.min(np.concatenate(path3s), axis=0)
