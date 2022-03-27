@@ -4,8 +4,9 @@ import cnc
 import sys
 import numpy as np
 
-if len(sys.argv) != 9:
-  print("Usage: python level.py lox hix loy hiy z safez offset feedrate")
+if len(sys.argv) not in [9, 10]:
+  print("Usage: python level.py lox hix loy hiy z safez offset feedrate "
+    "[quick]")
 else:
   xran = np.array([float(a) for a in sys.argv[1:3]])
   yran = np.array([float(a) for a in sys.argv[3:5]])
@@ -13,4 +14,5 @@ else:
   sht = float(sys.argv[6])
   offset = float(sys.argv[7])
   feedrate = float(sys.argv[8])
-  cnc.thicknesser(xran, yran, zht, sht, offset, feedrate, "level.gcode")
+  quick = False if len(sys.argv)<10 else bool(sys.argv[9])
+  cnc.thicknesser(xran, yran, zht, sht, offset, feedrate, "level.gcode", quick)
