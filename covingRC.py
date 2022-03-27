@@ -11,8 +11,8 @@ phi = 0.5+np.sqrt(1.25)
 # Board is currently 19x457x614
 # Changing to 17x457x380
 # Side panel width is 380
-bitRad = 2
-originHeight = 60
+bitRad = 1.6
+originHeight = 20
 w = 30         #  "tooth" base width
 a = 0.5*w      #  "tooth" length
 h = 17+bitRad  #  actual width of top plus bit radius
@@ -93,10 +93,12 @@ joins = np.cumsum(steps, axis=0)
 teeth = [Tooth(p0,p1) for (p0,p1) in zip(joins[:-1], joins[1:])]
 
 # Now create the paths & the gcode:
+thetaSet = np.linspace(np.pi/2,0,15,endpoint=False)
+# thetaSet = np.concatenate(([thetaSet[0]], thetaSet[3:]))  #  don't do enough
 toothPaths = [[tooth.pathAtTheta(theta,
   lambda x:max(n.heightAtXY(x) for n in neighbours))
   for (tooth,neighbours) in zipNeigh(teeth)]
-  for theta in np.linspace(np.pi/2,0,15,endpoint=False)]
+  for theta in thetaSet]
 thetaPaths = [np.concatenate(sl) for sl in toothPaths]
 cnc.cutSequence(thetaPaths, 1000, safeHt, "Truffules.gcode")
 
