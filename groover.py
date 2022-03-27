@@ -3,8 +3,8 @@ import numpy as np
 
 # Add grooves to the iris/album.
 
-depth = 0.3
-offset = 0.03  #  mm per radian
+depth = 0.2 + 10
+offset = 0.12  #  mm per radian
 tracks = np.array([[23.3, 30.5], [31.4, 35.9], [36.8, 45.8], [46.7, 51.2],
   [52.1, 56.1]])
 tracks *= 0.88
