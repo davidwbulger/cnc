@@ -9,18 +9,20 @@ phi = 0.5+np.sqrt(1.25)
 ###############################################################################
 # Parameters:
 # Board is currently 19x457x614
+# Changing to 17x457x380
 # Side panel width is 380
 bitRad = 2
+originHeight = 60
 w = 30         #  "tooth" base width
 a = 0.5*w      #  "tooth" length
-h = 19+bitRad  #  actual width of top plus bit radius
+h = 17+bitRad  #  actual width of top plus bit radius
 b = h*4/3      #  extra tooth extension at bottom vs top of board
 c = (2+np.sqrt(8))/5  #  coefs in quadratic determining tooth shape
 d = (3+np.sqrt(8))/5  #  coefs in quadratic determining tooth shape
 tas = int(np.ceil(380/w-np.sqrt(0.125)))  #  number of teeth along side
-taf = int(np.floor((614-2*(a+b))/w-np.sqrt(2))) 
-# print((tas,taf,a,b,(taf+np.sqrt(2))*w+2*(a+b)))
-safeHt = 6
+taf = int(np.floor((457-2*(a+b))/w-np.sqrt(2))) 
+print((tas,taf,a,b,(taf+np.sqrt(2))*w+2*(a+b)))
+safeHt = 0
 
 ###############################################################################
 class Tooth:
@@ -57,7 +59,7 @@ class Tooth:
     while ultx<len(inclu)-1 and inclu[ultx+1]:
       ultx += 1
     inclu[ultx+1:] = False
-    xy = np.array([[*v,z-h] for (v,wh) in zip(xy,inclu) if wh])
+    xy = np.array([[*v,z-h-originHeight] for (v,wh) in zip(xy,inclu) if wh])
     return xy
 
   def heightAtXY(self,xy):
@@ -101,3 +103,6 @@ cnc.cutSequence(thetaPaths, 1000, safeHt, "Truffules.gcode")
 # Also a primer to initiate the cut:
 thetaPaths = [np.concatenate(toothPaths[0])]
 cnc.cutSequence(thetaPaths, 1000, safeHt, "TrufPrimer.gcode")
+
+print(np.min(thetaPaths[0],axis=0))
+print(np.max(thetaPaths[0],axis=0))
