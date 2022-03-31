@@ -234,10 +234,51 @@ def catToolPaths(TPList):
       np.concatenate((TPList[0].taxis, TPList[1].taxis+np.array([[TPList[0].nodes.shape[1]-1],[0]])),axis=1))]
   return TPList[0]
 
+# def thicknesser(xran, yran, zht, sht, offset, feedrate, fname, quick=False):
+#   # Utility to plane a rectangle.
+#   # Cuts rectangle at height zht over rectangle [xran[0],xran[1]]x[yran[0],yran[1]].
+#   # Uses safe height sht.
+#   xwd = np.abs(np.diff(xran)[0])
+#   ywd = np.abs(np.diff(yran)[0])
+#   if xwd<ywd or not quick:  # True: #  Condition ought to be "xwd<ywd:", but the Z & Y axes aren't quite perpendicular
+#     (xran,yran,xwd,ywd) = (yran,xran,ywd,xwd)
+#     swapped = True
+#   else:
+#     swapped = False
+# 
+#   numRows = 2 + int(np.floor(ywd/offset))
+#   y = np.linspace(yran[0],yran[1],num=numRows)
+# 
+#   # Changing this to cut in one direction only, in the hope of getting a smoother surface.
+#   if quick:
+#     nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
+#       np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
+#     nodes = np.hstack((np.array([[0,0],[0,0],[0,sht]]), nodes, np.matmul(nodes[:,-1,None],np.array([[1,0,0]]))))
+#     nodes[2,-3:-1] = sht
+#     taxis = np.array([[0,2,nodes.shape[1]-4],[0,1,0]])
+#   else:
+#     nodes = np.array([[0,0,0], [0,0,sht]] +
+#       [[xran[j],yp,z] for yp in y for (j,z) in [(0,sht),(0,zht),(1,zht),(1,sht)]] +
+#       [[0,0,sht], [0,0,0]]).T
+#     taxis = np.array([[2*k,k%2] for k in range(2*len(y)+1)]).T
+# 
+#   if swapped:
+#     nodes = nodes[[1,0,2],:]
+#   ToolPath(nodes, taxis).PathToGCode(feedrate, fname)
+
 def thicknesser(xran, yran, zht, sht, offset, feedrate, fname, quick=False):
+  # Refactored to allow multiple passes!
   # Utility to plane a rectangle.
   # Cuts rectangle at height zht over rectangle [xran[0],xran[1]]x[yran[0],yran[1]].
   # Uses safe height sht.
+
+  # Ensure zht is a list or array of heights:
+  try:
+    N = len(zht)
+  except:
+    N = 1
+    zht = [zht]
+
   xwd = np.abs(np.diff(xran)[0])
   ywd = np.abs(np.diff(yran)[0])
   if xwd<ywd or not quick:  # True: #  Condition ought to be "xwd<ywd:", but the Z & Y axes aren't quite perpendicular
@@ -249,22 +290,26 @@ def thicknesser(xran, yran, zht, sht, offset, feedrate, fname, quick=False):
   numRows = 2 + int(np.floor(ywd/offset))
   y = np.linspace(yran[0],yran[1],num=numRows)
 
-  # Changing this to cut in one direction only, in the hope of getting a smoother surface.
-  if quick:
-    nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
-      np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zht],2*numRows)))))
-    nodes = np.hstack((np.array([[0,0],[0,0],[0,sht]]), nodes, np.matmul(nodes[:,-1,None],np.array([[1,0,0]]))))
-    nodes[2,-3:-1] = sht
-    taxis = np.array([[0,2,nodes.shape[1]-4],[0,1,0]])
-  else:
-    nodes = np.array([[0,0,0], [0,0,sht]] +
-      [[xran[j],yp,z] for yp in y for (j,z) in [(0,sht),(0,zht),(1,zht),(1,sht)]] +
-      [[0,0,sht], [0,0,0]]).T
-    taxis = np.array([[2*k,k%2] for k in range(2*len(y)+1)]).T
+  TPList = [None] * N
+  for (n,zhtel) in enumerate(zht):
+    # Changing this to cut in one direction only, in the hope of getting a smoother surface.
+    if quick:
+      nodes = np.vstack((np.pad(xran[[0,0,1,1]], (0,2*numRows-3), mode='wrap'),
+        np.hstack((y[0],np.kron(y,[1,1]))), np.hstack((sht,np.repeat([zhtel],2*numRows)))))
+      nodes = np.hstack((np.array([[0,0],[0,0],[0,sht]]), nodes, np.matmul(nodes[:,-1,None],np.array([[1,0,0]]))))
+      nodes[2,-3:-1] = sht
+      taxis = np.array([[0,2,nodes.shape[1]-4],[0,1,0]])
+    else:
+      nodes = np.array([[0,0,0], [0,0,sht]] +
+        [[xran[j],yp,z] for yp in y for (j,z) in [(0,sht),(0,zhtel),(1,zhtel),(1,sht)]] +
+        [[0,0,sht], [0,0,0]]).T
+      taxis = np.array([[2*k,k%2] for k in range(2*len(y)+1)]).T
+  
+    if swapped:
+      nodes = nodes[[1,0,2],:]
+    TPList[n] = ToolPath(nodes, taxis)
 
-  if swapped:
-    nodes = nodes[[1,0,2],:]
-  ToolPath(nodes, taxis).PathToGCode(feedrate, fname)
+  catToolPaths(TPList).PathToGCode(feedrate, fname)
 
 def cutPath(x, y, finalDepth, numPasses, feedRate, safeZ, fname):
   # Utility to cut an x-y path joining 2 or more xy coords to a constant depth.
