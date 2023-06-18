@@ -21,26 +21,129 @@ Ideas:
     mousepad.jpg, & it IS very much a line drawing, better suited to
     skeletonisation. We'll definitely need to adapt the method a bit here.
   Remind myself: is there an easy way to visualise the determined path?
+
+17 June:
+Simply cut a raster path? It would leave zigzag edges for edges perpendicular
+to the grooves. Could do two passes, in x & y directions, but diagonal edges
+would still zigzag.
+How about this:
+  Compute boundary
+  Cut paths along all boundaries
+  Determine what other cutting is necessary
+  Do remaining cut by raster
+A bit more elaborate, but will give a much better result.
+
+For cutting the paths along the boundaries, one challenge is to determine the
+depth and lateral offset at each point along the path, since there may for
+instance be sharp corners or tiny regions where we should cut at reduced depth.
+A simple and fairly quick method would be to discretise the boundary and, at
+each point, use bisection to find the largest tangent circle (up to bit
+diameter) not intersecting the inked region.
 """
 
 import cnc
 import numpy as np
 from scipy import ndimage
+from scipy.signal import decimate
+from skimage.filters import gaussian
 from skimage import io
+from skimage import measure
 from skimage.morphology import skeletonize
+from matplotlib.path import Path
 import matplotlib.pyplot as plt
 
 # PARAMETERS:
-imfile = "../../../stamp.png"
+imfile = "cicada.jpg"
 outputWidth = 72  #  width of desired output, in millimetres
-outfile = "stamp.gcode"  #  widest point is about 72 pixels
+outfile = "printBlock.gcode"  #  widest point is about 72 pixels
+downSampleRate = 8
+blurRad = 1.2  #  for antialiasing the boundary cut paths, if dsRate==1
 
 vBitAngle = 90  #  bit angle in degrees
-vBitWidth = 3.175
-sfht = 3  #  3 mm ain't much but ought to suffice
+# vBitWidth = 3.175
+# sfht = 3  #  3 mm ain't much but ought to suffice
+maxDepth = 3.2  #  3.2 mm
 sanddepth = 0.2  #  cut this much deeper, so a groove remains after sanding 
 
-image = io.imread(imfile, as_gray=True).astype(float)
+# CALCULATED FROM PARAMETERS:
+maxRad = maxDepth * np.tan(vBitAngle/2)
+image = io.imread(imfile, as_gray=True).astype(float)[:,::-1]  #  flip LR
+if downSampleRate > 1:
+  image = decimate(decimate(image, downSampleRate, axis=0),
+    downSampleRate, axis=1)
+else:
+  image = gaussian(image,sigma=blurRad)
+dpmm = image.shape[1]/outputWidth  #  dots per millimetre
+
+# FIRST CALCULATE THE BOUNDARY CUTS, FOR SMOOTHER EDGES:
+contours = measure.find_contours(image, 0.5)
+# Note, by default, the contours are positively oriented around low-valued,
+# i.e., inked regions.
+if (checkContours := False):
+  print(len(contours))
+  print(np.array([[f([c.shape[k] for c in contours])
+    for f in [np.min, np.mean, np.max]] for k in range(2)]))
+  # Display the image and plot all contours found
+  (fig, ax) = plt.subplots()
+  ax.imshow(image, cmap=plt.cm.gray)
+  for contour in contours:
+      ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color='r')
+  ax.axis('image')
+  ax.set_xticks([])
+  ax.set_yticks([])
+  plt.show()
+  exit()
+# Precalculate some stuff:
+# Normals pointing into the cut (non-ink) region:
+normals = [
+  vertNormal/np.linalg.norm(vertNormal,axis=1)[:,None] for vertNormal in (
+    edgeNormal+np.roll(edgeNormal,-1,axis=0) for edgeNormal in (
+      edgeParallel/np.linalg.norm(edgeParallel,axis=1)[:,None] @
+      np.array([[0,-1],[1,0]]) for edgeParallel in (
+        vertex-np.roll(vertex,1,axis=0) for vertex in cs)))]
+
+"""
+Alright, so I'm thinking if we precalculate the quadratic terms, it should
+speed up checking which points are in which circles. In particular we're gonna
+be interested in whether (u,v) is inside the circle of radius t that's centred
+on (x,y)+(p,q), where (x,y) is a vertex on the contour & (p,q) is the normal.
+It's inside if
+t^2 > [(x+tp)-u]^2+[(y+tq)-v]^2
+ = x^2+2txp+t^2p^2-2xu-2tpu+u^2 + y^2+2tyq+t^2q^2-2yv-2tqv+v^2 
+but note that (p,q) is normalised, so t^2=t^2(p^2+q^2), so (u,v) is inside if
+0 > x^2+2txp-2xu-2tpu+u^2 + y^2+2tyq-2yv-2tqv+v^2, i.e., if
+[u,u^2,v,v^2] @ ([2x,-1,2y,-1] + t[2p,0,2q,0]) > x^2+y^2 + 2t(xp+yq).
+Can simply try with max radius first, and thereby identify any at risk pixels;
+then calculate reduced radius for each pixel by solving this linear eqn, then
+use the lowest.
+"""
+
+# EXPERIMENT:
+copa = Path.make_compound_path(*[Path(vertices=c) for c in contours])
+ink = gaussian(image,sigma=blurRad)
+# xyi = np.array([np.tile(np.arange(image.shape[1])/dpmm,image.shape[0]),
+#   np.repeat(np.arange(image.shape[0])/dpmm,image.shape[1]),
+#   ink.flatten()])  #  a 3-row matrix with each vertex's (x,y,blurred ink).
+# interior = np.full(xyi.shape[1],False)
+# for (k,pix) in enumerate(xyi.T):
+  
+
+# A 2-column matrix with the (x,y) coords of each image point in the same order
+# as ink.flatten() will give:
+xyflat = np.array([np.tile(np.arange(image.shape[1])/dpmm,image.shape[0]),
+  np.repeat(np.arange(image.shape[0])/dpmm,image.shape[1])]).T
+interior = copa.contains_points(xyflat)
+print(np.min(ink[interior]))
+print(np.max(ink[interior]))
+print(np.min(ink[~interior]))
+print(np.max(ink[~interior]))
+exit()
+
+# HALFWIDTHS OF BOUNDARY CUTS:
+contours = [np.concatenate((c,np.full((c.shape[0],1),maxRad)),axis=1)
+  for c in contours]
+
+
 # Now process it in some way to partition into "ink" & "no ink." A small amount
 # of smoothing followed by a threshold would simplify the topology. On the
 # other hand, it would "extremise" locally light grey or dark grey regions.
@@ -49,7 +152,7 @@ image = io.imread(imfile, as_gray=True).astype(float)
 #   calculate local mean value at medium scale
 #   do until converge:
 #     smooth at small scale
-$     threshold at 0.5
+#     threshold at 0.5
 #     calculate local mean value at medium scale
 #     subtract difference
 #   Quite possibly there's already something like this or better in python's
@@ -144,3 +247,5 @@ taxis = np.row_stack((np.insert(np.cumsum([k for path in paths
   for k in (2,len(path))])-0,0,0),
   np.arange(2*len(paths)+1)%2))
 cnc.ToolPath(nodes,taxis).PathToGCode(900,outfile)
+
+# BG:301808 ; FG:CCBB88
