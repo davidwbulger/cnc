@@ -53,10 +53,10 @@ from matplotlib.path import Path
 import matplotlib.pyplot as plt
 
 # PARAMETERS:
-imfile = "cicada.jpg"
+imfile = "cicada.jpg" ; downSampleRate = 8
+imfile = "W.jpg" ; downSampleRate = 1
 outputWidth = 72  #  width of desired output, in millimetres
 outfile = "printBlock.gcode"  #  widest point is about 72 pixels
-downSampleRate = 8
 blurRad = 1.2  #  for antialiasing the boundary cut paths, if dsRate==1
 
 vBitAngle = 90  #  bit angle in degrees
@@ -67,19 +67,42 @@ sanddepth = 0.2  #  cut this much deeper, so a groove remains after sanding
 # Note: vBitAngle is the dihedral angle between the two sides of a groove cut
 # by the bit, i.e., TWICE the angle between a groove wall (or bit edge) and the
 # vertical.
-# bit-angle multiplier; ratio of depth of cut to halfwidth of cut:
-bam = 1/np.tan(vBitAngle*np.pi/360)
-maxRad = maxDepth / bam
+# bit-angle multiplier; ratio of halfwidth of cut to depth of cut:
+bam = np.tan(vBitAngle*np.pi/360)
+maxRad = maxDepth * bam
 image = io.imread(imfile, as_gray=True).astype(float)[:,::-1]  #  flip LR
 if downSampleRate > 1:
   image = decimate(decimate(image, downSampleRate, axis=0),
     downSampleRate, axis=1)
+  # Somehow, the above expands the range of colour values.
+  image = (image-0.5)*0.5/np.max(np.abs(image-0.5)) + 0.5
 else:
   image = gaussian(image,sigma=blurRad)
 dpmm = image.shape[1]/outputWidth  #  dots per millimetre
+M = max(image.shape)/dpmm
+
+# FUNCTIONS:
+def bocut(W,cmat,nmat):
+  # Determine boundary cut given contour cmat & normals nmat.
+  t = maxRad*np.ones((cmat.shape[0],1))
+  for (k,(c,n)) in enumerate(zip(cmat,nmat)):
+    Wx = W-c
+    obx = np.sum(Wx*Wx,axis=1) < 2*maxRad*Wx@n
+    if np.any(obx):
+      Wo = Wx[obx]
+      t[k] = np.min(np.sum(Wo*Wo,axis=1) / (2*Wo@n))
+      if t[k] < 0.3*maxRad:
+        breakpoint()  #  some ts are too shallow; work out why.
+        # I bet find_contours has an off-by-one effect like len(diff(x)).
+  # Path of bit vertex:
+  try:
+    retval = np.concatenate((cmat[1:]+t[1:]*nmat,-bam*t[1:]),axis=1)
+  except:
+    breakpoint()
+  return retval
 
 # FIRST CALCULATE THE BOUNDARY CUTS, FOR SMOOTHER EDGES:
-contours = measure.find_contours(image, 0.5)
+contours = [c/dpmm for c in measure.find_contours(image, 0.5)]
 # Note, by default, the contours are positively oriented around low-valued,
 # i.e., inked regions.
 # Precalculate some stuff:
@@ -93,7 +116,7 @@ normals = [
       np.array([[0,-1],[1,0]]) for edgeParallel in (
         vertex[1:]-vertex[:-1] for vertex in contours)))]
 if (checkContours := False):
-  k = np.argmax([l>10 and l<20 for l in (n.shape[0] for n in normals)])
+  k = 0  #  np.argmax([l>10 and l<20 for l in (n.shape[0] for n in normals)])
   print(len(contours))
   print(np.array([[f([c.shape[z] for c in contours])
     for f in [np.min, np.mean, np.max]] for z in range(2)]))
@@ -101,8 +124,8 @@ if (checkContours := False):
   (fig, ax) = plt.subplots()
   ax.imshow(image, cmap=plt.cm.gray)
   for contour in contours:
-    ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color='r')
-  for (v,n) in zip(contours[k][1:], normals[k]):
+    ax.plot(dpmm*contour[:, 1], dpmm*contour[:, 0], linewidth=1, color='r')
+  for (v,n) in zip(dpmm*contours[k][1:], 0.03*M*normals[k]):
     ax.plot([v[1],v[1]+n[1]], [v[0],v[0]+n[0]], linewidth=1, color='b')
   ax.axis('image')
   ax.set_xticks([])
@@ -133,24 +156,34 @@ Are we tacitly assuming a 90 degree bit?
 Not so far; this "t" (max (u-x).(u-x)/2(u-x).n) is the biggest radius circle
 tangent to the contour that doesn't overlap the inked region.
 """
-X = np.array([np.arange(0.5,image.shape[0])/dpmm]*image.shape[1])
-Y = np.array([np.arange(image.shape[1]-0.5,0,-1)/dpmm]*image.shape[0]).T
+X = np.array([np.arange(0.5,image.shape[0])/dpmm]*image.shape[1]).T
+Y = np.array([np.arange(image.shape[1]-0.5,0,-1)/dpmm]*image.shape[0])
 W = np.array([X[image<0.5],Y[image<0.5]]).T  #  all inked pixels as rows
 boundaryCuts = [bocut(W,c,n) for (c,n) in zip(contours,normals)]
 
-def bocut(W,cmat,nmat):
-  # Determine boundary cut given contour cmat & normals nmat.
-  t = maxRad*np.ones((cmat.shape[0],1))
-  for (k,(c,n)) in enumerate(zip(cmat,nmat)):
-    Wx = W-c
-    obx = np.sum(Wx*Wx,axis=1) < 2*maxRad*Wx@n
-    if np.any(obx):
-      Wo = Wx[obx]
-      t[k] = np.min(np.sum(Wo*Wo,axis=1) / (2*Wo@n))
-  # Path of bit vertex:
-  return np.concatenate((cmat+t*nmat,-np.tan(vBitAngle/2)*t))
+# Now to check, plot the image & the boundary cuts in 3D:
+if (viewBoundaryCuts := True):
+  ax = plt.figure().add_subplot(projection='3d')
+  # ax.imshow(image, cmap=plt.cm.gray)
+  print(image.shape)
+  faco = np.stack([image[:,::-1]]*3+[0.6+0*image],axis=-1)
+  print((X.shape,Y.shape,faco.shape))
+  surf = ax.plot_surface(X, Y, 0*X, facecolors=faco,
+    # cmap=plt.cm.gray,
+    linewidth=0, antialiased=False)
+  for boc in boundaryCuts:
+    # ax.plot(boc[:,0], boc[:,1], boc[:,2], color='r')
+    ax.plot(*np.concatenate((boc,boc[0:1])).T, color='r')
+  ax.set_xlim([0,M])
+  ax.set_ylim([0,M])
+  ax.set_zlim([-M/2,M/2])
+  plt.show()
+  exit()
 
-exit()
+# The above doesn't look quite right, but it's hard to see what's exactly going
+# on, due to the complexity of the original image. I'll create a new, simple
+# image and try it on that.
+
 
 # EXPERIMENT:
 copa = Path.make_compound_path(*[Path(vertices=c) for c in contours])
@@ -210,7 +243,7 @@ sw = ndimage.distance_transform_edt(image) * skeleton  #  what is '*' here?
 
 scale = outputWidth/K  #  millimetres per pixel
 (X,Y) = np.meshgrid(scale*np.arange(K), scale*np.arange(J)[::-1])
-Z = -sw * (scale * bam)
+Z = -sw * (scale / bam)
 
 #  shifts cuts downward so that the origin/safe-height can be a little higher:
 Z = (Z-sanddepth) * (Z<0)
