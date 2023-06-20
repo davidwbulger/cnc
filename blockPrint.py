@@ -60,13 +60,16 @@ downSampleRate = 8
 blurRad = 1.2  #  for antialiasing the boundary cut paths, if dsRate==1
 
 vBitAngle = 90  #  bit angle in degrees
-# vBitWidth = 3.175
-# sfht = 3  #  3 mm ain't much but ought to suffice
 maxDepth = 3.2  #  3.2 mm
 sanddepth = 0.2  #  cut this much deeper, so a groove remains after sanding 
 
 # CALCULATED FROM PARAMETERS:
-maxRad = maxDepth * np.tan(vBitAngle/2)
+# Note: vBitAngle is the dihedral angle between the two sides of a groove cut
+# by the bit, i.e., TWICE the angle between a groove wall (or bit edge) and the
+# vertical.
+# bit-angle multiplier; ratio of depth of cut to halfwidth of cut:
+bam = 1/np.tan(vBitAngle*np.pi/360)
+maxRad = maxDepth / bam
 image = io.imread(imfile, as_gray=True).astype(float)[:,::-1]  #  flip LR
 if downSampleRate > 1:
   image = decimate(decimate(image, downSampleRate, axis=0),
@@ -79,28 +82,33 @@ dpmm = image.shape[1]/outputWidth  #  dots per millimetre
 contours = measure.find_contours(image, 0.5)
 # Note, by default, the contours are positively oriented around low-valued,
 # i.e., inked regions.
-if (checkContours := False):
-  print(len(contours))
-  print(np.array([[f([c.shape[k] for c in contours])
-    for f in [np.min, np.mean, np.max]] for k in range(2)]))
-  # Display the image and plot all contours found
-  (fig, ax) = plt.subplots()
-  ax.imshow(image, cmap=plt.cm.gray)
-  for contour in contours:
-      ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color='r')
-  ax.axis('image')
-  ax.set_xticks([])
-  ax.set_yticks([])
-  plt.show()
-  exit()
 # Precalculate some stuff:
-# Normals pointing into the cut (non-ink) region:
+# Normals pointing into the cut (non-ink) region (note that in contours, the
+# loop is explicit [the last vertex is repeated at the start] whereas this
+# doesn't happen in normals):
 normals = [
   vertNormal/np.linalg.norm(vertNormal,axis=1)[:,None] for vertNormal in (
     edgeNormal+np.roll(edgeNormal,-1,axis=0) for edgeNormal in (
       edgeParallel/np.linalg.norm(edgeParallel,axis=1)[:,None] @
       np.array([[0,-1],[1,0]]) for edgeParallel in (
-        vertex-np.roll(vertex,1,axis=0) for vertex in cs)))]
+        vertex[1:]-vertex[:-1] for vertex in contours)))]
+if (checkContours := False):
+  k = np.argmax([l>10 and l<20 for l in (n.shape[0] for n in normals)])
+  print(len(contours))
+  print(np.array([[f([c.shape[z] for c in contours])
+    for f in [np.min, np.mean, np.max]] for z in range(2)]))
+  # Display the image and plot all contours found
+  (fig, ax) = plt.subplots()
+  ax.imshow(image, cmap=plt.cm.gray)
+  for contour in contours:
+    ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color='r')
+  for (v,n) in zip(contours[k][1:], normals[k]):
+    ax.plot([v[1],v[1]+n[1]], [v[0],v[0]+n[0]], linewidth=1, color='b')
+  ax.axis('image')
+  ax.set_xticks([])
+  ax.set_yticks([])
+  plt.show()
+  exit()
 
 """
 Alright, so I'm thinking if we precalculate the quadratic terms, it should
@@ -116,7 +124,33 @@ but note that (p,q) is normalised, so t^2=t^2(p^2+q^2), so (u,v) is inside if
 Can simply try with max radius first, and thereby identify any at risk pixels;
 then calculate reduced radius for each pixel by solving this linear eqn, then
 use the lowest.
+Further manipulation:
+[u,u^2,v,v^2] @ ([2x,-1,2y,-1] + t[2p,0,2q,0]) > x^2+y^2 + 2t(xp+yq) <==>
+x^2+y^2 - U@[2x,-1,2y,-1] < 2t[(u-x)p+(v-y)q]  <==>
+(x-u)^2+(y-v)^2 < 2t[(u-x).n]  <==>
+t > (u-x).(u-x) / 2(u-x).n
+Are we tacitly assuming a 90 degree bit?
+Not so far; this "t" (max (u-x).(u-x)/2(u-x).n) is the biggest radius circle
+tangent to the contour that doesn't overlap the inked region.
 """
+X = np.array([np.arange(0.5,image.shape[0])/dpmm]*image.shape[1])
+Y = np.array([np.arange(image.shape[1]-0.5,0,-1)/dpmm]*image.shape[0]).T
+W = np.array([X[image<0.5],Y[image<0.5]]).T  #  all inked pixels as rows
+boundaryCuts = [bocut(W,c,n) for (c,n) in zip(contours,normals)]
+
+def bocut(W,cmat,nmat):
+  # Determine boundary cut given contour cmat & normals nmat.
+  t = maxRad*np.ones((cmat.shape[0],1))
+  for (k,(c,n)) in enumerate(zip(cmat,nmat)):
+    Wx = W-c
+    obx = np.sum(Wx*Wx,axis=1) < 2*maxRad*Wx@n
+    if np.any(obx):
+      Wo = Wx[obx]
+      t[k] = np.min(np.sum(Wo*Wo,axis=1) / (2*Wo@n))
+  # Path of bit vertex:
+  return np.concatenate((cmat+t*nmat,-np.tan(vBitAngle/2)*t))
+
+exit()
 
 # EXPERIMENT:
 copa = Path.make_compound_path(*[Path(vertices=c) for c in contours])
@@ -126,7 +160,7 @@ ink = gaussian(image,sigma=blurRad)
 #   ink.flatten()])  #  a 3-row matrix with each vertex's (x,y,blurred ink).
 # interior = np.full(xyi.shape[1],False)
 # for (k,pix) in enumerate(xyi.T):
-  
+
 
 # A 2-column matrix with the (x,y) coords of each image point in the same order
 # as ink.flatten() will give:
@@ -173,12 +207,6 @@ fig.canvas.flush_events()
 
 # get strokewidth:
 sw = ndimage.distance_transform_edt(image) * skeleton  #  what is '*' here?
-
-# Note: vBitAngle is the dihedral angle between the two sides of a groove cut
-# by the bit, i.e., TWICE the angle between a groove wall (or bit edge) and the
-# vertical.
-# bit-angle multiplier; ratio of depth of cut to width of cut:
-bam = 0.5/np.tan(vBitAngle*np.pi/360)
 
 scale = outputWidth/K  #  millimetres per pixel
 (X,Y) = np.meshgrid(scale*np.arange(K), scale*np.arange(J)[::-1])
