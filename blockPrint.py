@@ -91,7 +91,7 @@ def bocut(W,cmat,nmat):
     if np.any(obx):
       Wo = Wx[obx]
       t[k] = np.min(np.sum(Wo*Wo,axis=1) / (2*Wo@n))
-      if t[k] < 0.3*maxRad:
+      if c[1]<-55 and t[k] < 0.4*maxRad:
         breakpoint()  #  some ts are too shallow; work out why.
         # I bet find_contours has an off-by-one effect like len(diff(x)).
   # Path of bit vertex:
@@ -102,7 +102,14 @@ def bocut(W,cmat,nmat):
   return retval
 
 # FIRST CALCULATE THE BOUNDARY CUTS, FOR SMOOTHER EDGES:
-contours = [c/dpmm for c in measure.find_contours(image, 0.5)]
+# contours = [c[:,::-1]/dpmm for c in measure.find_contours(image, 0.5)]
+contours = [c@[[0,-1/dpmm],[1/dpmm,0]] for c in measure.find_contours(image, 0.5)]
+# contours = [c for c in measure.find_contours(image, 0.5)]
+# path = Path(vertices=contours[0])
+# iv = np.array([[path.contains_point((j,k)), image[j,k]]
+#   for j in range(image.shape[0]) for k in range(image.shape[1])])
+# print([f(iv[iv[:,0]==bv][:,1]) for f in (np.min,np.max) for bv in (0,1)])
+# exit()
 # Note, by default, the contours are positively oriented around low-valued,
 # i.e., inked regions.
 # Precalculate some stuff:
@@ -124,9 +131,9 @@ if (checkContours := False):
   (fig, ax) = plt.subplots()
   ax.imshow(image, cmap=plt.cm.gray)
   for contour in contours:
-    ax.plot(dpmm*contour[:, 1], dpmm*contour[:, 0], linewidth=1, color='r')
+    ax.plot(dpmm*contour[:, 0], -dpmm*contour[:, 1], linewidth=1, color='r')
   for (v,n) in zip(dpmm*contours[k][1:], 0.03*M*normals[k]):
-    ax.plot([v[1],v[1]+n[1]], [v[0],v[0]+n[0]], linewidth=1, color='b')
+    ax.plot([v[0],v[0]+n[0]], [-v[1],-v[1]-n[1]], linewidth=1, color='b')
   ax.axis('image')
   ax.set_xticks([])
   ax.set_yticks([])
@@ -156,8 +163,8 @@ Are we tacitly assuming a 90 degree bit?
 Not so far; this "t" (max (u-x).(u-x)/2(u-x).n) is the biggest radius circle
 tangent to the contour that doesn't overlap the inked region.
 """
-X = np.array([np.arange(0.5,image.shape[0])/dpmm]*image.shape[1]).T
-Y = np.array([np.arange(image.shape[1]-0.5,0,-1)/dpmm]*image.shape[0])
+X = np.array([np.arange(0,image.shape[1])/dpmm]*image.shape[0])
+Y = np.array([-np.arange(0,image.shape[0])/dpmm]*image.shape[1]).T
 W = np.array([X[image<0.5],Y[image<0.5]]).T  #  all inked pixels as rows
 boundaryCuts = [bocut(W,c,n) for (c,n) in zip(contours,normals)]
 
@@ -166,7 +173,7 @@ if (viewBoundaryCuts := True):
   ax = plt.figure().add_subplot(projection='3d')
   # ax.imshow(image, cmap=plt.cm.gray)
   print(image.shape)
-  faco = np.stack([image[:,::-1]]*3+[0.6+0*image],axis=-1)
+  faco = np.stack([image]*3+[0.6+0*image],axis=-1)
   print((X.shape,Y.shape,faco.shape))
   surf = ax.plot_surface(X, Y, 0*X, facecolors=faco,
     # cmap=plt.cm.gray,
@@ -175,8 +182,10 @@ if (viewBoundaryCuts := True):
     # ax.plot(boc[:,0], boc[:,1], boc[:,2], color='r')
     ax.plot(*np.concatenate((boc,boc[0:1])).T, color='r')
   ax.set_xlim([0,M])
-  ax.set_ylim([0,M])
+  ax.set_ylim([-M,0])
   ax.set_zlim([-M/2,M/2])
+  plt.xlabel('x')
+  plt.ylabel('y')
   plt.show()
   exit()
 
