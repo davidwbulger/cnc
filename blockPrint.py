@@ -1,46 +1,7 @@
 # Project with Nikau to cut blocks for printing. Based on BibleCovers.py.
 # Started 2023 June 15.
 
-"""
-Ideas:
-  Remember to reverse the image, in two ways:
-    flip it left to right
-    cut where ink SHOULDN'T appear
-  Function to cut region:
-    find (outer?) boundary
-    cut along it (adjusting cut depth as necessary)
-    compute remainder (with cut path overlap)
-    partition remainder into regions
-    order regions by proximity (now?)
-    recursively call same function on each region
-    concerns:
-      what about non-simply-connected regions?
-      linear, cyclic & hexamorphic paths
-  Find previous images (mousepad & bible covers) & determine how different they
-    really are. Maybe not much adaptation is needed. Actually, I've looked at
-    mousepad.jpg, & it IS very much a line drawing, better suited to
-    skeletonisation. We'll definitely need to adapt the method a bit here.
-  Remind myself: is there an easy way to visualise the determined path?
-
-17 June:
-Simply cut a raster path? It would leave zigzag edges for edges perpendicular
-to the grooves. Could do two passes, in x & y directions, but diagonal edges
-would still zigzag.
-How about this:
-  Compute boundary
-  Cut paths along all boundaries
-  Determine what other cutting is necessary
-  Do remaining cut by raster
-A bit more elaborate, but will give a much better result.
-
-For cutting the paths along the boundaries, one challenge is to determine the
-depth and lateral offset at each point along the path, since there may for
-instance be sharp corners or tiny regions where we should cut at reduced depth.
-A simple and fairly quick method would be to discretise the boundary and, at
-each point, use bisection to find the largest tangent circle (up to bit
-diameter) not intersecting the inked region.
-"""
-
+# Find unused imports:
 import cnc
 import numpy as np
 from scipy import ndimage
@@ -48,13 +9,14 @@ from scipy.signal import decimate
 from skimage.filters import gaussian
 from skimage import io
 from skimage import measure
-from skimage.morphology import skeletonize
+# from skimage.morphology import skeletonize
 from matplotlib.path import Path
 import matplotlib.pyplot as plt
 
 # PARAMETERS:
-imfile = "cicada.jpg" ; downSampleRate = 8
-imfile = "W.jpg" ; downSampleRate = 1
+# imfile = "cicada.jpg" ; downSampleRate = 8
+# imfile = "W.jpg" ; downSampleRate = 1
+imfile = "steamboat.jpg" ; downSampleRate = 8
 outputWidth = 72  #  width of desired output, in millimetres
 outfile = "printBlock.gcode"  #  widest point is about 72 pixels
 blurRad = 1.2  #  for antialiasing the boundary cut paths, if dsRate==1
@@ -71,6 +33,9 @@ sanddepth = 0.2  #  cut this much deeper, so a groove remains after sanding
 bam = np.tan(vBitAngle*np.pi/360)
 maxRad = maxDepth * bam
 image = io.imread(imfile, as_gray=True).astype(float)[:,::-1]  #  flip LR
+if imfile=="steamboat.jpg":  #  hack to standardise range
+  image -= np.min(image)
+  image /= np.max(image)
 if downSampleRate > 1:
   image = decimate(decimate(image, downSampleRate, axis=0),
     downSampleRate, axis=1)
@@ -103,8 +68,9 @@ def bocut(W,cmat,nmat):
 
 # FIRST CALCULATE THE BOUNDARY CUTS, FOR SMOOTHER EDGES:
 # contours = [c[:,::-1]/dpmm for c in measure.find_contours(image, 0.5)]
-contours = [c@[[0,-1/dpmm],[1/dpmm,0]] for c in measure.find_contours(image, 0.5)]
 # contours = [c for c in measure.find_contours(image, 0.5)]
+contours=[c@[[0,-1/dpmm],[1/dpmm,0]] for c in measure.find_contours(image,0.5)]
+image = (image>=0.5)
 # path = Path(vertices=contours[0])
 # iv = np.array([[path.contains_point((j,k)), image[j,k]]
 #   for j in range(image.shape[0]) for k in range(image.shape[1])])
@@ -165,11 +131,25 @@ tangent to the contour that doesn't overlap the inked region.
 """
 X = np.array([np.arange(0,image.shape[1])/dpmm]*image.shape[0])
 Y = np.array([-np.arange(0,image.shape[0])/dpmm]*image.shape[1]).T
-W = np.array([X[image<0.5],Y[image<0.5]]).T  #  all inked pixels as rows
+W = np.array([X[~image],Y[~image]]).T  #  all inked pixels as rows
 boundaryCuts = [bocut(W,c,n) for (c,n) in zip(contours,normals)]
 
+# COMPUTE RASTER CUTS:
+dpo = int(dpmm*maxRad)  #  dots per offset
+targetDepth =np.minimum(maxRad,ndimage.distance_transform_edt(image)/dpmm)/bam
+# Note that
+#   np.split(s,1+(np.diff(s==0)).nonzero()[0])[(1 if s[0]==0 else 0)::2]
+# gives a list of contiguous arrays of indices of nonzero values. Each will
+# yield a raster cut.
+# Generator for raster cuts' k indices & targetDepth columns:
+ktG = ((k,targetDepth[:,k]) for k in range(0,image.shape[1],dpo))
+jkG = ((jvec,k) for (k,t) in ktG for jvec in np.split(np.arange(len(t)),
+  1+(np.diff(t==0)).nonzero()[0])[(1 if t[0]==0 else 0)::2])
+rasterCuts = [np.array([X[jvec,k],Y[jvec,k],-targetDepth[jvec,k]]).T
+  for (jvec,k) in jkG]
+
 # Now to check, plot the image & the boundary cuts in 3D:
-if (viewBoundaryCuts := True):
+if (viewBoundaryCuts := False):
   ax = plt.figure().add_subplot(projection='3d')
   # ax.imshow(image, cmap=plt.cm.gray)
   print(image.shape)
@@ -179,8 +159,9 @@ if (viewBoundaryCuts := True):
     # cmap=plt.cm.gray,
     linewidth=0, antialiased=False)
   for boc in boundaryCuts:
-    # ax.plot(boc[:,0], boc[:,1], boc[:,2], color='r')
     ax.plot(*np.concatenate((boc,boc[0:1])).T, color='r')
+  for rac in rasterCuts:
+    ax.plot(*rac.T, color='b')
   ax.set_xlim([0,M])
   ax.set_ylim([-M,0])
   ax.set_zlim([-M/2,M/2])
@@ -189,56 +170,31 @@ if (viewBoundaryCuts := True):
   plt.show()
   exit()
 
-# The above doesn't look quite right, but it's hard to see what's exactly going
-# on, due to the complexity of the original image. I'll create a new, simple
-# image and try it on that.
-
-
-# EXPERIMENT:
-copa = Path.make_compound_path(*[Path(vertices=c) for c in contours])
-ink = gaussian(image,sigma=blurRad)
-# xyi = np.array([np.tile(np.arange(image.shape[1])/dpmm,image.shape[0]),
-#   np.repeat(np.arange(image.shape[0])/dpmm,image.shape[1]),
-#   ink.flatten()])  #  a 3-row matrix with each vertex's (x,y,blurred ink).
-# interior = np.full(xyi.shape[1],False)
-# for (k,pix) in enumerate(xyi.T):
-
-
-# A 2-column matrix with the (x,y) coords of each image point in the same order
-# as ink.flatten() will give:
-xyflat = np.array([np.tile(np.arange(image.shape[1])/dpmm,image.shape[0]),
-  np.repeat(np.arange(image.shape[0])/dpmm,image.shape[1])]).T
-interior = copa.contains_points(xyflat)
-print(np.min(ink[interior]))
-print(np.max(ink[interior]))
-print(np.min(ink[~interior]))
-print(np.max(ink[~interior]))
 exit()
 
-# HALFWIDTHS OF BOUNDARY CUTS:
-contours = [np.concatenate((c,np.full((c.shape[0],1),maxRad)),axis=1)
-  for c in contours]
+# NOW COMBINE AND ORDER ALL CUTS:
+allCuts = [(True,bc) for bc in boundaryCuts]+[(False,rc) for rc in rasterCuts]
+# Create table of all points at which a cut can be started. For loop cuts,
+# this is anywhere along the cut; otherwise, just the two ends.
+xyjk = np.concatenate([
+  np.concatenate([ac[:,:2],j*np.ones((len(ac),1)),np.arange(len(ac))[:,None]],
+  axis=1) if loop else
+  np.array([[ac[0,0],ac[0,1],j,0],[ac[-1,0],ac[-1,1],j,len(ac)-1]])
+  for (loop,ac) in allCuts])
+fovea = np.array([0,0])  #  initial "current point"
+orderedCuts = []
+# yts = np.arange(len(allCuts),dtype=int)  #  yet to schedule
+yts = np.full(len(xyjk),True)
+# while np.any(yts):  #  do above first so I can look at this -i style
+#   rx = np.argmin([np.sum((row[:2]-fovea)**2 HIPPO np.inf
 
 
-# Now process it in some way to partition into "ink" & "no ink." A small amount
-# of smoothing followed by a threshold would simplify the topology. On the
-# other hand, it would "extremise" locally light grey or dark grey regions.
-# What about this:
-#   two scales: small & medium (still fairly small)
-#   calculate local mean value at medium scale
-#   do until converge:
-#     smooth at small scale
-#     threshold at 0.5
-#     calculate local mean value at medium scale
-#     subtract difference
-#   Quite possibly there's already something like this or better in python's
-#     image tools.
-# Note: coords are array-style: [vert from top, horz from left]
-(J,K) = image.shape
 
-# perform skeletonization
-print("Skeletonising...")
-skeleton = skeletonize(image)
+###############################################################################
+exit()
+###############################################################################
+
+
 
 plt.ion()
 (fig, ax) = plt.subplots(figsize=(9, 9))
