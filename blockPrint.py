@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 
 # PARAMETERS:
 # imfile = "cicada.jpg" ; downSampleRate = 8
-# imfile = "W.jpg" ; downSampleRate = 1
-imfile = "steamboat.jpg" ; downSampleRate = 8
+imfile = "W.jpg" ; downSampleRate = 1
+# imfile = "steamboat.jpg" ; downSampleRate = 8
 outputWidth = 72  #  width of desired output, in millimetres
 outfile = "printBlock.gcode"  #  widest point is about 72 pixels
 blurRad = 1.2  #  for antialiasing the boundary cut paths, if dsRate==1
@@ -56,9 +56,9 @@ def bocut(W,cmat,nmat):
     if np.any(obx):
       Wo = Wx[obx]
       t[k] = np.min(np.sum(Wo*Wo,axis=1) / (2*Wo@n))
-      if c[1]<-55 and t[k] < 0.4*maxRad:
-        breakpoint()  #  some ts are too shallow; work out why.
-        # I bet find_contours has an off-by-one effect like len(diff(x)).
+      # if c[1]<-55 and t[k] < 0.4*maxRad:
+      #   breakpoint()  #  some ts are too shallow; work out why.
+      #   # I bet find_contours has an off-by-one effect like len(diff(x)).
   # Path of bit vertex:
   try:
     retval = np.concatenate((cmat[1:]+t[1:]*nmat,-bam*t[1:]),axis=1)
@@ -143,25 +143,71 @@ targetDepth =np.minimum(maxRad,ndimage.distance_transform_edt(image)/dpmm)/bam
 # yield a raster cut.
 # Generator for raster cuts' k indices & targetDepth columns:
 ktG = ((k,targetDepth[:,k]) for k in range(0,image.shape[1],dpo))
-jkG = ((jvec,k) for (k,t) in ktG for jvec in np.split(np.arange(len(t)),
-  1+(np.diff(t==0)).nonzero()[0])[(1 if t[0]==0 else 0)::2])
-rasterCuts = [np.array([X[jvec,k],Y[jvec,k],-targetDepth[jvec,k]]).T
-  for (jvec,k) in jkG]
+jkG = ([(jvec,k) for jvec in np.split(np.arange(len(t)),
+  1+(np.diff(t==0)).nonzero()[0])[(1 if t[0]==0 else 0)::2]] for (k,t) in ktG)
+rasterCuts = [[np.array([X[jvec,k],Y[jvec,k],-targetDepth[jvec,k]]).T
+  for (jvec,k) in col] for col in jkG]
+
+# Just a debugging utility:
+l = lambda cl: np.concatenate([rc[[0,-1]] for rc in cl])
+
+# NOW COMBINE AND ORDER ALL CUTS:
+# Heuristic, but a good one:
+#   Firstly plan the raster cuts as though we're only doing them:
+#     each constant-x group is done in order, y either increasing or decresing
+#     greedily go to whichever end is closer at end of each x
+#   For each loop cut, find the shortest detour to select insertion point.
+scheduledCuts = rasterCuts[0].copy()
+for sublist in rasterCuts[1:]:
+  # Firstly don't bother to schedule any raster cuts that are too short, since
+  # the boundary cuts will handle such areas:
+  sublist = [cut for cut in sublist if np.abs(cut[0,1]-cut[-1,1])>3*maxRad]
+  # Now schedule the remaining ones in a mostly back&forth order:
+  if np.abs(scheduledCuts[-1][-1,1]-sublist[-1][-1,1]) < np.abs(
+    scheduledCuts[-1][-1,1]-sublist[0][0,1]):
+    scheduledCuts += [rc[::-1] for rc in reversed(sublist)]
+  else:
+    scheduledCuts += sublist
+
+# Find optimal insertion points for each loop cut (again, greedily):
+for bc in boundaryCuts:
+  # DL[j,k] is the extra motion added by inserting this loop after the
+  # currently jth scheduled cut, starting & ending at its kth vertex.
+  DL = np.array([np.linalg.norm(bc[:,:2]-scheduledCuts[j][-1,:2],axis=1) +
+    np.linalg.norm(bc[:,:2]-scheduledCuts[j+1][0,:2],axis=1) 
+    for j in range(len(scheduledCuts)-1)])
+  opt = np.unravel_index(np.argmin(DL, axis=None), DL.shape)
+  scheduledCuts.insert(opt[0]+1,np.concatenate((bc[opt[1]:],bc[:(opt[1]+1)])))
+
+# Shift cuts downward a tiny bit so that you can sand after cutting. Also use
+# raised origin to minimise damage if the early termination problem recurs.
+extra = 30
+sfht = 2 - extra  #  2mm above surface
+scheduledCuts = [cut-[0,0,extra+sanddepth] for cut in scheduledCuts]
+
+print("Writing the gcode...")
+nodes = np.row_stack([
+  np.row_stack([[*path[0,:2],sfht], path, [*path[-1,:2],sfht]])
+  for path in scheduledCuts]).T
+taxis = np.row_stack((np.insert(np.cumsum([k for path in scheduledCuts
+  for k in (2,len(path))])-1,0,0),
+  np.arange(2*len(scheduledCuts)+1)%2))
+# cnc.ToolPath(nodes,taxis[:,:-1]).PathToGCode(900,outfile)
+taxis = np.row_stack((np.cumsum([k for path in scheduledCuts
+  for k in (2,len(path))])-2,
+  np.arange(1,2*len(scheduledCuts)+1)%2))
+cnc.ToolPath(nodes,taxis).PathToGCode(900,outfile)
 
 # Now to check, plot the image & the boundary cuts in 3D:
-if (viewBoundaryCuts := False):
+if (viewCuts := True):
   ax = plt.figure().add_subplot(projection='3d')
-  # ax.imshow(image, cmap=plt.cm.gray)
   print(image.shape)
   faco = np.stack([image]*3+[0.6+0*image],axis=-1)
   print((X.shape,Y.shape,faco.shape))
   surf = ax.plot_surface(X, Y, 0*X, facecolors=faco,
-    # cmap=plt.cm.gray,
     linewidth=0, antialiased=False)
-  for boc in boundaryCuts:
-    ax.plot(*np.concatenate((boc,boc[0:1])).T, color='r')
-  for rac in rasterCuts:
-    ax.plot(*rac.T, color='b')
+  for boc in scheduledCuts:
+    ax.plot(*boc.T, color='r')
   ax.set_xlim([0,M])
   ax.set_ylim([-M,0])
   ax.set_zlim([-M/2,M/2])
@@ -169,109 +215,5 @@ if (viewBoundaryCuts := False):
   plt.ylabel('y')
   plt.show()
   exit()
-
-exit()
-
-# NOW COMBINE AND ORDER ALL CUTS:
-allCuts = [(True,bc) for bc in boundaryCuts]+[(False,rc) for rc in rasterCuts]
-# Create table of all points at which a cut can be started. For loop cuts,
-# this is anywhere along the cut; otherwise, just the two ends.
-xyjk = np.concatenate([
-  np.concatenate([ac[:,:2],j*np.ones((len(ac),1)),np.arange(len(ac))[:,None]],
-  axis=1) if loop else
-  np.array([[ac[0,0],ac[0,1],j,0],[ac[-1,0],ac[-1,1],j,len(ac)-1]])
-  for (loop,ac) in allCuts])
-fovea = np.array([0,0])  #  initial "current point"
-orderedCuts = []
-# yts = np.arange(len(allCuts),dtype=int)  #  yet to schedule
-yts = np.full(len(xyjk),True)
-# while np.any(yts):  #  do above first so I can look at this -i style
-#   rx = np.argmin([np.sum((row[:2]-fovea)**2 HIPPO np.inf
-
-
-
-###############################################################################
-exit()
-###############################################################################
-
-
-
-plt.ion()
-(fig, ax) = plt.subplots(figsize=(9, 9))
-ax.imshow(skeleton)
-ax.set_xticks([]), ax.set_yticks([])
-ax.axis([0, image.shape[1], image.shape[0], 0])
-fig.canvas.flush_events()
-
-# get strokewidth:
-sw = ndimage.distance_transform_edt(image) * skeleton  #  what is '*' here?
-
-scale = outputWidth/K  #  millimetres per pixel
-(X,Y) = np.meshgrid(scale*np.arange(K), scale*np.arange(J)[::-1])
-Z = -sw * (scale / bam)
-
-#  shifts cuts downward so that the origin/safe-height can be a little higher:
-Z = (Z-sanddepth) * (Z<0)
-numToDo = np.sum(Z<0)  # number of pixels needing cutting still to be scheduled
-XYZ = np.stack((X,Y,Z),2)
-toDo = (Z<0)
-
-def neighYet(j,k):
-  # The number of neighbouring points still needing scheduling.
-  return np.sum(toDo[max(0,j-1):min(J,j+2),max(0,k-1):min(K,k+2)]) - toDo[j,k]
-
-def spiralAround(j,k):
-  yield (j,k)
-  for searchRad in range(1,max(J,K)):
-    for jo in [j-searchRad,j+searchRad]:
-      if jo>=0 and jo<J:
-        for ko in range(max(0,k-searchRad+1),min(K,k+searchRad)):
-          yield (jo,ko)
-    for ko in [k-searchRad,k+searchRad]:
-      if ko>=0 and ko<K:
-        for jo in range(max(0,j-searchRad),min(J,j+searchRad+1)):
-          yield (jo,ko)
-
-curpos = (0,0)
-paths = []
-while numToDo>0:
-  curpath = [] # np.zeros((2,0))
-  # Try to find a loose end:
-  for (jo,ko) in spiralAround(*curpos):
-    if toDo[jo,ko] and neighYet(jo,ko)==1:
-      curpath.append(np.array([jo,ko]))
-      toDo[jo,ko]=False
-      break
-  if not len(curpath):  #  couldn't find a loose end; just grab any point
-    for (jo,ko) in spiralAround(*curpos):
-      if toDo[jo,ko]:
-        curpath.append(np.array([jo,ko]))
-        toDo[jo,ko]=False
-        break
-  # Now we can assume that we've found a starting point.
-  while len(curpath)<numToDo and neighYet(jo,ko):
-    for (jo,ko) in spiralAround(jo,ko):  # terminates at an immediate neighbour
-      if toDo[jo,ko]:
-        curpath.append(np.array([jo,ko]))
-        toDo[jo,ko]=False
-        break
-  paths.append(curpath)
-  numToDo -= len(curpath)
-  curpos = (jo,ko)
-  arcjk = np.array(curpath)
-  ax.plot(arcjk[:,1], arcjk[:,0], '-r', lw=3)
-  fig.canvas.flush_events()  #  plt.draw()
-  print(numToDo)
-
-print("All the paths have been found. Writing the gcode...")
-nodes = np.row_stack(([0,0,0],[0,0,sfht]) +
-  tuple(np.row_stack(([X[tuple(path[0])],Y[tuple(path[0])],sfht],
-  XYZ[tuple(np.array(path).T)],
-  [X[tuple(path[-1])],Y[tuple(path[-1])],sfht])) for path in paths) +
-  ([0,0,sfht],)).T
-taxis = np.row_stack((np.insert(np.cumsum([k for path in paths
-  for k in (2,len(path))])-0,0,0),
-  np.arange(2*len(paths)+1)%2))
-cnc.ToolPath(nodes,taxis).PathToGCode(900,outfile)
 
 # BG:301808 ; FG:CCBB88
