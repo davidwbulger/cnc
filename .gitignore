@@ -1,0 +1,5 @@
+*.gcode
+*.swp
+Clutter
+*.stl
+__pycache__
