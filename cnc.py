@@ -316,12 +316,19 @@ def cutPath(x, y, finalDepth, numPasses, feedRate, safeZ, fname,
   # Utility to cut an x-y path joining 2 or more xy coords to a constant depth.
   if depthIncrement == None:
     depthIncrement = finalDepth/numPasses  #  default, assumes initial contact
+  # My CNC machine unfortunately sometimes stops carving near the beginning of
+  # a job and beelines to the origin, which occasionally spoils the wood. To
+  # give it a chance to freak out harmlessly, I'm adding a 360-degree 'dance'
+  # at origin height before the start of the cut.
+  dance = np.array([[30*np.cos(phi),30*(1+np.sin(phi)),max(0,safeZ)]
+    for phi in np.linspace(-0.5*np.pi,1.5*np.pi,361)])
   nodes = np.array([[0,0,0], [0,0,safeZ], [x[0],y[0],safeZ]] +
     # [[x[j],y[j],-finalDepth*(k+1)/numPasses] for k in range(numPasses)
     [[x[j],y[j],-finalDepth+depthIncrement*(numPasses-1-k)]
     for k in range(numPasses) for j in range(len(x))[::(1-2*(k%2))]] +
     [[x[-(numPasses%2)],y[-(numPasses%2)],safeZ], [0,0,safeZ]]).T
-  taxis = np.array([[0,0], [2,1], [nodes.shape[1]-3,0]]).T
+  nodes = np.hstack([dance.T, nodes])
+  taxis = np.array([[0,0], [2+len(dance),1], [nodes.shape[1]-3,0]]).T
 
   ToolPath(nodes, taxis).PathToGCode(feedRate, fname)
 
