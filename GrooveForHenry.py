@@ -40,5 +40,5 @@ cuts = [
 # (x,y) = np.vstack((cuts[0], cuts[1][::-1])).T
 (x,y) = np.vstack([cuts[k][::((-1)**k)] for (k,cut) in enumerate(cuts)]).T
 
-cnc.cutPath(x, y, 35, 4, 300, -25, "Henry.gcode", 1.3)
+cnc.cutPath(x, y, 35, 4, 500, -25, "Henry.gcode", 1.3)
 # START FROM 30mm ABOVE SURFACE!!!
